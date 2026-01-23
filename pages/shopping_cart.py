@@ -38,66 +38,67 @@ def get_user_sheet_with_auth(spreadsheet, user_id, pin_code, login_mode=True):
     try:
         sheet = spreadsheet.worksheet(safe_id)
         saved_pin = sheet.acell('Z1').value
-        # 為了避免型別問題，全部轉字串比較
         if saved_pin and str(saved_pin).strip() != str(pin_code).strip():
             return None, "🔒 密碼錯誤！"
         return sheet, "Success"
     except gspread.WorksheetNotFound:
         try:
-            # 建立新表，26欄是為了把密碼藏在 Z1
             sheet = spreadsheet.add_worksheet(title=safe_id, rows=100, cols=26)
+            # 建立時先給標題
             sheet.append_row(["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
             sheet.update_acell('Z1', str(pin_code))
             return sheet, "Success"
         except Exception:
             return None, "建立失敗"
 
-# --- 3. 資料讀取 (🔥 關鍵修正: 只讀前6欄) ---
+# --- 3. 資料讀取 (🔥 強制補齊空位，解決空白行問題) ---
 def load_data_safe(sheet):
     try:
-        # 讀取所有資料 (list of lists)
         all_values = sheet.get_all_values()
         
-        # 如果是空的或只有標題
+        # 定義標準欄位
+        columns = ["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"]
+        expected_len = len(columns)
+
         if len(all_values) <= 1:
-            return pd.DataFrame(columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
+            return pd.DataFrame(columns=columns)
         
-        # 🔥 重點：只切取前 6 欄 (index 0 到 5)，避開後面的空白欄位和 Z1
-        headers = all_values[0][:6] 
-        data = [row[:6] for row in all_values[1:]] # 每一列也只取前 6 格
+        # 略過第一列標題
+        raw_data = all_values[1:]
+        clean_data = []
+
+        for row in raw_data:
+            # 1. 確保每一列都是 List (防呆)
+            if not isinstance(row, list): continue
+            
+            # 2. 如果長度不夠，補上空字串
+            if len(row) < expected_len:
+                row = row + [""] * (expected_len - len(row))
+            
+            # 3. 如果長度太長，切掉後面的 (只取前6個)
+            clean_data.append(row[:expected_len])
         
-        # 建立 DataFrame
-        df = pd.DataFrame(data, columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
+        df = pd.DataFrame(clean_data, columns=columns)
         return df
     except Exception as e:
-        st.error(f"讀取失敗: {e}")
+        st.error(f"資料讀取異常: {e}")
         return pd.DataFrame(columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
 
-# --- 4. 資料儲存 (🔥 關鍵修正: 保護 Z1) ---
+# --- 4. 資料儲存 (🔥 處理 NaN 避免寫入錯誤) ---
 def save_dataframe_to_sheet(sheet, df, pin_code):
     try:
-        # 1. 為了安全，不使用 clear() 清空整張表 (怕網路斷掉 Z1 回不去)
-        # 2. 我們只更新 A1 到 F(N) 的範圍
+        # 將 NaN 轉為空字串，Google Sheet 才看得懂
+        df = df.fillna("")
         
-        # 準備資料：標題 + 內容
+        # 準備資料
         data_to_write = [df.columns.values.tolist()] + df.values.tolist()
         
-        # 計算範圍字串 (例如 "A1:F5")
+        # 更新範圍 (A1 到 F + 行數)
         num_rows = len(data_to_write)
-        num_cols = 6 # 固定 6 欄
         range_str = f"A1:F{num_rows}"
         
-        # 批次更新資料區塊
         sheet.update(range_name=range_str, values=data_to_write)
-        
-        # 再次確保 Z1 密碼存在 (雙重保險)
-        sheet.update_acell('Z1', str(pin_code))
-        
-        # (選用) 清除表格下方的舊資料残渣
-        # 如果新資料比舊資料少，下方可能會殘留。
-        # 但為了效能與安全，這裡暫不處理清除，因為使用者通常是增加資料。
-        # 若真的要清除，可以將 F{num_rows+1}:F100 設為空
-        
+        sheet.update_acell('Z1', str(pin_code)) # 確保密碼不見
         return True
     except Exception as e:
         st.error(f"儲存失敗: {e}")
@@ -267,9 +268,6 @@ with tab2:
         for index, row in df.iterrows():
             with cols[index % 4]:
                 if row['ISBN']:
-                    # 簡單快取機制：如果有封面連結就用，沒有才去 Google 抓
-                    # 這裡為了簡單，我們假設 Google Sheet 沒存封面，所以每次都即時抓
-                    # 實務上建議把封面連結存回 Google Sheet 會更快
                     img_url = search_google_books(str(row['ISBN']))['封面']
                     if img_url: st.image(img_url, use_container_width=True)
                     else: st.markdown("📚")
