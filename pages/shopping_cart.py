@@ -12,6 +12,62 @@ import re
 st.set_page_config(page_title="掃碼購物車", page_icon="🛒", layout="wide")
 
 st.title("🛒 2026 書展掃碼比價 & 採購清單")
+# --- 暫時加入的診斷區塊 (除錯完可刪除) ---
+with st.expander("🔧 網路連線診斷 (Debug Mode)", expanded=True):
+    col_d1, col_d2 = st.columns(2)
+    
+    with col_d1:
+        if st.button("1. 檢查主機 IP 位置"):
+            try:
+                # 查詢這台雲端電腦的對外 IP
+                ip_info = requests.get("https://httpbin.org/ip", timeout=5).json()
+                # 查詢這個 IP 的物理位置 (大概)
+                geo_info = requests.get(f"https://ipapi.co/{ip_info['origin']}/json/", timeout=5).json()
+                
+                st.write(f"**雲端主機 IP:** `{ip_info['origin']}`")
+                st.write(f"**所在國家:** `{geo_info.get('country_name', 'Unknown')}`")
+                st.write(f"**所在城市:** `{geo_info.get('city', 'Unknown')}`")
+                
+                if geo_info.get('country_code') != 'TW':
+                    st.error("⚠️ 警告：您的程式正在「國外」執行，很有可能被國圖擋 IP！")
+                else:
+                    st.success("✅ 您的程式在台灣境內執行。")
+            except Exception as e:
+                st.error(f"無法查詢 IP: {e}")
+
+    with col_d2:
+        if st.button("2. 測試國圖連線回傳"):
+            test_url = "https://isbn.ncl.edu.tw/NEW_ISBNNet/H30_SearchBooks.php"
+            # 這是我們偽裝的 header
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Referer': 'https://isbn.ncl.edu.tw/'
+            }
+            try:
+                st.write(f"正在嘗試連線至: `{test_url}` ...")
+                r = requests.get(test_url, headers=headers, timeout=10)
+                
+                st.write(f"**狀態碼 (Status Code):** `{r.status_code}`")
+                
+                if r.status_code == 200:
+                    st.success("連線成功！(200 OK)")
+                    st.text("👇 伺服器回傳內容的前 500 個字：")
+                    st.code(r.text[:500], language='html')
+                    
+                    # 簡單關鍵字檢查
+                    if "系統忙碌" in r.text or "Access Denied" in r.text or "Captcha" in r.text:
+                        st.error("❌ 雖然連上了，但被防火牆 (WAF) 擋住了！")
+                    elif "全國新書資訊網" in r.text:
+                        st.success("✅ 看起來是正常的國圖頁面！")
+                    else:
+                        st.warning("⚠️ 回傳內容怪怪的，可能不是正確頁面。")
+                elif r.status_code == 403:
+                    st.error("⛔ 403 Forbidden：被拒絕存取 (通常是擋 IP 或 User-Agent)。")
+                else:
+                    st.error(f"❌ 連線異常：{r.status_code}")
+                    
+            except Exception as e:
+                st.error(f"💀 連線直接失敗 (Timeout/Connection Error): {e}")
 st.markdown("輸入 ISBN，自動抓取 **國家圖書館** 與 **Google** 資料，建立最精準的採購清單！")
 
 # --- 設定區 ---
