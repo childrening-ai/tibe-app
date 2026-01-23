@@ -41,96 +41,100 @@ def connect_to_sheet():
         print(f"連線錯誤: {e}")
         return None
 
-# --- 2. 爬蟲：國家圖書館 (NCL) - 略過 SSL 驗證版 ---
-def search_ncl(isbn):
+# --- 新增：改爬 Findbook (借力使力版) ---
+def search_findbook(isbn):
     clean_isbn = isbn.replace("-", "").replace(" ", "")
-    base_url = "https://isbn.ncl.edu.tw/NEW_ISBNNet/"
-    search_url = f"{base_url}H30_SearchBooks.php"
+    # Findbook 的網址規則
+    url = f"https://findbook.com.tw/{clean_isbn}"
     
     session = requests.Session()
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Referer': 'https://isbn.ncl.edu.tw/NEW_ISBNNet/H30_SearchBooks.php' 
+        'Referer': 'https://findbook.com.tw/'
     }
     
-    result = {
-        "source": "NCL",
-        "書名": "", "作者": "", "出版社": "", "ISBN": clean_isbn,
-        "定價": "", "封面": ""
-    }
-
     try:
-        # [Step 1] 搜尋列表頁
-        params = {
-            "FO_SearchValue0": clean_isbn,
-            "FO_SearchField0": "ISBN",
-            "Pact": "DisplayAll4Simple",
-        }
-        
-        # 🔥 關鍵修改：verify=False (略過 SSL 檢查)
-        res1 = session.get(search_url, params=params, headers=headers, timeout=15, verify=False)
-        res1.encoding = 'utf-8'
-        
-        if res1.status_code != 200:
-            print(f"❌ 國圖連線失敗，狀態碼: {res1.status_code}")
+        # 嘗試連線
+        res = session.get(url, headers=headers, timeout=10)
+        if res.status_code != 200:
             return None
             
-        soup1 = BeautifulSoup(res1.text, 'html.parser')
+        soup = BeautifulSoup(res.text, 'html.parser')
         
-        # --- 抓取邏輯 (維持原本針對截圖優化的版本) ---
-        title_td = soup1.find("td", {"data-th": "書名"})
-        detail_link = ""
+        result = {
+            "source": "Findbook",
+            "書名": "", "作者": "", "定價": "", "封面": "", "Link": url
+        }
         
-        if title_td:
-            link_tag = title_td.find("a")
-            if link_tag:
-                result["書名"] = link_tag.text.strip()
-                detail_link = link_tag['href']
-            else:
-                result["書名"] = title_td.text.strip()
+        # 1. 抓書名 (通常在 h1 或 h2)
+        # Findbook 的結構通常標題會有 itemprop="name"
+        title_tag = soup.find("span", {"itemprop": "name"})
+        if title_tag:
+            result["書名"] = title_tag.text.strip()
             
-            img_td = soup1.find("td", {"data-th": "封面圖"})
-            if img_td:
-                img_tag = img_td.find("img")
-                if img_tag and 'src' in img_tag.attrs:
-                    result["封面"] = img_tag['src']
-
-            author_td = soup1.find("td", {"data-th": "作者"})
-            if author_td: result["作者"] = author_td.text.strip()
-
-            pub_td = soup1.find("td", {"data-th": "出版者"})
-            if pub_td: result["出版社"] = pub_td.text.strip()
-
-        else:
-            # Fallback: 暴力找連結
-            link_tag = soup1.find("a", href=re.compile(r"main_DisplayRecord\.php"))
-            if link_tag:
-                result["書名"] = link_tag.text.strip()
-                detail_link = link_tag['href']
-            else:
-                return None
-
-        # [Step 2] 進入詳細頁 (為了抓定價)
-        if detail_link:
-            try:
-                target_url = base_url + detail_link
-                # 🔥 關鍵修改：這裡也要 verify=False
-                res2 = session.get(target_url, headers=headers, timeout=10, verify=False)
-                res2.encoding = 'utf-8'
-                soup2 = BeautifulSoup(res2.text, 'html.parser')
-                
-                price_td = soup2.find("td", {"data-th": "定價"})
-                if price_td:
-                    raw_price = price_td.text.strip()
-                    result["定價"] = re.sub(r"[^\d]", "", raw_price)
-            except:
-                pass
+        # 2. 抓作者
+        author_tag = soup.find("span", {"itemprop": "author"})
+        if author_tag:
+            result["作者"] = author_tag.text.strip()
+            
+        # 3. 抓圖片
+        img_tag = soup.find("img", {"itemprop": "image"})
+        if img_tag and 'src' in img_tag.attrs:
+            result["封面"] = img_tag['src']
+            
+        # 4. 🔥 抓價格 (這是重點！)
+        # Findbook 會有一個比價列表，我們抓第一個（通常是最便宜或主打）
+        # 尋找 class="price" 的標籤
+        price_tags = soup.find_all(class_="price")
+        if price_tags:
+            # 濾掉非數字的文字，只留價格
+            for p in price_tags:
+                p_text = p.text.strip()
+                # 排除 "比價" 這種標題字，找含有數字的
+                if any(char.isdigit() for char in p_text):
+                    # 取出數字
+                    clean_price = re.sub(r"[^\d]", "", p_text)
+                    if clean_price:
+                        result["定價"] = clean_price
+                        break # 抓到一個就收工
 
         return result
 
     except Exception as e:
-        print(f"NCL 爬蟲錯誤: {e}")
+        print(f"Findbook 爬取失敗: {e}")
         return None
+
+# --- 修改 smart_book_search 整合邏輯 ---
+def smart_book_search(isbn):
+    if not isbn: return None
+    clean_isbn = isbn.replace("-", "").replace(" ", "")
+    
+    final = {
+        "書名": "", "作者": "", "ISBN": clean_isbn, 
+        "封面": "", "定價": "", 
+        "建檔時間": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "found": False
+    }
+
+    # 1. 策略 A: 先問 Findbook (因為它有價格！)
+    fb_data = search_findbook(clean_isbn)
+    if fb_data and fb_data["書名"]:
+        final.update(fb_data)
+        final["found"] = True
+    
+    # 2. 策略 B: 如果 Findbook 沒抓到 (可能被擋)，再問 Google Books 補救
+    # (如果 Findbook 已經抓到書名，這裡就不跑了，節省資源)
+    if not final["found"] or not final["封面"]:
+        g_data = search_google_books(clean_isbn)
+        if g_data:
+            # 如果 Findbook 沒書名，用 Google 的
+            if not final["書名"]: final["書名"] = g_data["書名"]
+            if not final["作者"]: final["作者"] = g_data["作者"]
+            # 如果 Findbook 沒圖片，用 Google 的 (Google圖片通常比較好拿)
+            if not final["封面"]: final["封面"] = g_data["封面"]
+            final["found"] = True
+
+    return final
 
 # --- 3. 輔助：Google Books ---
 def search_google_books(isbn):
