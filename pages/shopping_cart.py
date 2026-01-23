@@ -34,9 +34,16 @@ def connect_to_sheet():
     except Exception as e:
         return None
 
-# --- 2. 爬蟲：Google Books (主力，因為它不擋雲端 IP) ---
-def search_google_books(isbn):
-    clean_isbn = isbn.replace("-", "").replace(" ", "")
+# --- 工具：ISBN 超級清洗 ---
+def clean_isbn_func(isbn_raw):
+    if not isbn_raw: return ""
+    # 1. 去除前後空白、換行符號
+    # 2. 去除橫線 "-"
+    # 3. 去除中間空白
+    return str(isbn_raw).strip().replace("-", "").replace(" ", "").replace("\n", "").replace("\t", "")
+
+# --- 2. 爬蟲：Google Books ---
+def search_google_books(clean_isbn):
     url = f"https://www.googleapis.com/books/v1/volumes?q=isbn:{clean_isbn}"
     try:
         res = requests.get(url, timeout=5).json()
@@ -54,9 +61,11 @@ def search_google_books(isbn):
     return {"found": False}
 
 # --- 3. 搜尋邏輯整合 ---
-def smart_book_search(isbn):
-    if not isbn: return None
-    clean_isbn = isbn.replace("-", "").replace(" ", "")
+def smart_book_search(isbn_input):
+    if not isbn_input: return None
+    
+    # 🔥 關鍵修正：確保這裡使用的是最乾淨的純數字 ISBN
+    clean_isbn = clean_isbn_func(isbn_input)
     
     # 預設結果
     result = {
@@ -67,7 +76,7 @@ def smart_book_search(isbn):
         "source": "None"
     }
 
-    # 只抓 Google Books (因為 Findbook/國圖 在雲端都會被擋，不如直接放棄，節省等待時間)
+    # 只抓 Google Books
     g_data = search_google_books(clean_isbn)
     
     if g_data["found"]:
@@ -99,7 +108,7 @@ with col1:
         with st.spinner("☁️ 搜尋資料庫中..."):
             res = smart_book_search(isbn_input)
             st.session_state.search_result = res
-            st.session_state.manual_entry_mode = False # 重置手動模式
+            st.session_state.manual_entry_mode = False 
 
 # --- 結果顯示區 ---
 if st.session_state.search_result:
@@ -107,7 +116,7 @@ if st.session_state.search_result:
     
     st.divider()
     
-    # 情境 A: Google 有抓到書 (通常有圖、有書名，缺價格)
+    # 情境 A: Google 有抓到書
     if res['found']:
         st.success(f"✅ 找到書籍：{res['書名']}")
         
@@ -119,20 +128,21 @@ if st.session_state.search_result:
                 else:
                     st.markdown("🖼️ (無封面)")
                 
-                # 🔥 這裡是最重要的功能：快速查價按鈕 🔥
-                # 既然程式爬不到，我們提供傳送門，讓使用者點一下就能看到價格
+                # 🔥 修正後的連結：只搜尋關鍵字，不限制欄位 🔥
+                books_link = f"https://search.books.com.tw/search/query/key/{res['ISBN']}"
+                findbook_link = f"https://findbook.tw/book/{res['ISBN']}/price"
+
                 st.markdown("---")
                 st.caption("👇 點擊按鈕查價，再填入右側")
                 
-                # 博客來連結
                 st.markdown(f'''
-                    <a href="https://search.books.com.tw/search/query/key/{res['ISBN']}/adv_author/1/" target="_blank" style="text-decoration:none;">
+                    <a href="{books_link}" target="_blank" style="text-decoration:none;">
                         <button style="width:100%; background-color:#F2F2F2; border:1px solid #ddd; padding:8px; border-radius:5px; cursor:pointer;">
                             🔍 查博客來
                         </button>
                     </a>
                     <br><br>
-                    <a href="https://findbook.tw/book/{res['ISBN']}/price" target="_blank" style="text-decoration:none;">
+                    <a href="{findbook_link}" target="_blank" style="text-decoration:none;">
                         <button style="width:100%; background-color:#F2F2F2; border:1px solid #ddd; padding:8px; border-radius:5px; cursor:pointer;">
                             🔍 查 Findbook 比價
                         </button>
@@ -142,13 +152,11 @@ if st.session_state.search_result:
             with c2:
                 new_title = st.text_input("書名", value=res['書名'])
                 new_author = st.text_input("作者", value=res['作者'])
-                # 價格欄位預設為空，等待使用者查完填入
                 new_price = st.text_input("💰 價格 (請依查價結果填入)", value="")
                 
                 confirm_btn = st.form_submit_button("✅ 確認並加入清單")
 
                 if confirm_btn:
-                    save_img = res['封面']
                     new_row = [res['建檔時間'], new_title, new_author, res['ISBN'], new_price, "待購"]
                     sheet.append_row(new_row)
                     st.toast(f"🎉 已加入：{new_title}")
@@ -156,16 +164,20 @@ if st.session_state.search_result:
                     st.session_state.search_result = None
                     st.rerun()
 
-    # 情境 B: 完全找不到 (Google 也沒資料) -> 純手動模式
+    # 情境 B: 完全找不到
     else:
         st.warning("⚠️ 資料庫找不到此書 (可能是太新的書)。請手動輸入。")
         
-        # 即使找不到書，也提供查價按鈕，方便使用者複製書名
+        # 即使找不到，按鈕一樣要給對的連結
+        clean_isbn_val = clean_isbn_func(isbn_input)
+        books_link = f"https://search.books.com.tw/search/query/key/{clean_isbn_val}"
+        findbook_link = f"https://findbook.tw/book/{clean_isbn_val}/price"
+        
         st.markdown(f'''
             👉 
-            <a href="https://search.books.com.tw/search/query/key/{isbn_input}/adv_author/1/" target="_blank">查博客來</a>
+            <a href="{books_link}" target="_blank">查博客來</a>
             ｜
-            <a href="https://findbook.tw/book/{isbn_input}/price" target="_blank">查 Findbook</a>
+            <a href="{findbook_link}" target="_blank">查 Findbook</a>
         ''', unsafe_allow_html=True)
 
         with st.form("manual_form"):
