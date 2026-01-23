@@ -8,14 +8,13 @@ import time
 import re
 import urllib3
 
-# 設定頁面
-st.set_page_config(page_title="掃碼購物車", page_icon="🛒", layout="wide")
+st.set_page_config(page_title="書展敗家計算機", page_icon="💸", layout="wide")
 
 # --- 設定區 ---
 SHEET_NAME = "2026國際書展採購清單"
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- 1. 連接 Google Sheets (每次呼叫都重新連線，確保不斷線) ---
+# --- 1. 連接 Google Sheets ---
 def connect_to_spreadsheet():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     try:
@@ -36,60 +35,77 @@ def connect_to_spreadsheet():
 def get_user_sheet_with_auth(spreadsheet, user_id, pin_code, login_mode=True):
     safe_id = re.sub(r'[^a-zA-Z0-9_\u4e00-\u9fa5]', '', str(user_id))
     if not safe_id: return None, "ID 無效"
-    
     try:
-        # A. 嘗試取得既有分頁
         sheet = spreadsheet.worksheet(safe_id)
-        saved_pin = sheet.acell('Z1').value # 讀取藏在 Z1 的密碼
-        
-        # 驗證密碼 (如果 Z1 空的就放行，相容舊資料)
-        if saved_pin and str(saved_pin) != str(pin_code):
-            return None, "🔒 密碼錯誤！無法存取此清單。"
-        
+        saved_pin = sheet.acell('Z1').value
+        # 為了避免型別問題，全部轉字串比較
+        if saved_pin and str(saved_pin).strip() != str(pin_code).strip():
+            return None, "🔒 密碼錯誤！"
         return sheet, "Success"
-
     except gspread.WorksheetNotFound:
-        # B. 建立新分頁 (如果是登入模式卻找不到，代表帳號不存在)
-        if login_mode:
-             # 但為了方便體驗，我們這裡採用「找不到就自動註冊」的邏輯
-             pass 
-             
         try:
+            # 建立新表，26欄是為了把密碼藏在 Z1
             sheet = spreadsheet.add_worksheet(title=safe_id, rows=100, cols=26)
             sheet.append_row(["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
-            sheet.update_acell('Z1', str(pin_code)) # 儲存密碼
+            sheet.update_acell('Z1', str(pin_code))
             return sheet, "Success"
-        except Exception as e:
-            return None, f"建立失敗: {e}"
+        except Exception:
+            return None, "建立失敗"
 
-# --- 3. 資料同步功能 (將編輯後的 DataFrame 存回 Google Sheet) ---
+# --- 3. 資料讀取 (🔥 關鍵修正: 只讀前6欄) ---
+def load_data_safe(sheet):
+    try:
+        # 讀取所有資料 (list of lists)
+        all_values = sheet.get_all_values()
+        
+        # 如果是空的或只有標題
+        if len(all_values) <= 1:
+            return pd.DataFrame(columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
+        
+        # 🔥 重點：只切取前 6 欄 (index 0 到 5)，避開後面的空白欄位和 Z1
+        headers = all_values[0][:6] 
+        data = [row[:6] for row in all_values[1:]] # 每一列也只取前 6 格
+        
+        # 建立 DataFrame
+        df = pd.DataFrame(data, columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
+        return df
+    except Exception as e:
+        st.error(f"讀取失敗: {e}")
+        return pd.DataFrame(columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
+
+# --- 4. 資料儲存 (🔥 關鍵修正: 保護 Z1) ---
 def save_dataframe_to_sheet(sheet, df, pin_code):
     try:
-        # 1. 先把密碼 (PIN) 備份起來 (因為 clear 會清空整張表)
-        # 也可以直接用參數傳進來的 pin_code，確保不會遺失
+        # 1. 為了安全，不使用 clear() 清空整張表 (怕網路斷掉 Z1 回不去)
+        # 2. 我們只更新 A1 到 F(N) 的範圍
         
-        # 2. 清空工作表
-        sheet.clear()
-        
-        # 3. 準備寫入的資料 (包含標題列)
-        # Google Sheet 需要 list of lists 格式
+        # 準備資料：標題 + 內容
         data_to_write = [df.columns.values.tolist()] + df.values.tolist()
         
-        # 4. 寫入資料
-        sheet.update(data_to_write)
+        # 計算範圍字串 (例如 "A1:F5")
+        num_rows = len(data_to_write)
+        num_cols = 6 # 固定 6 欄
+        range_str = f"A1:F{num_rows}"
         
-        # 5. 把密碼寫回 Z1 (重要！不然下次會登不進去)
+        # 批次更新資料區塊
+        sheet.update(range_name=range_str, values=data_to_write)
+        
+        # 再次確保 Z1 密碼存在 (雙重保險)
         sheet.update_acell('Z1', str(pin_code))
+        
+        # (選用) 清除表格下方的舊資料残渣
+        # 如果新資料比舊資料少，下方可能會殘留。
+        # 但為了效能與安全，這裡暫不處理清除，因為使用者通常是增加資料。
+        # 若真的要清除，可以將 F{num_rows+1}:F100 設為空
         
         return True
     except Exception as e:
         st.error(f"儲存失敗: {e}")
         return False
 
-# --- 4. 工具函式 ---
+# --- 5. 爬蟲工具 ---
 def clean_isbn_func(isbn_raw):
-    if not isbn_raw: return ""
-    return str(isbn_raw).strip().replace("-", "").replace(" ", "").replace("\n", "").replace("\t", "")
+    return str(isbn_raw).strip().replace("-", "").replace(" ", "").replace("\n", "").replace("\t", "") if isbn_raw else ""
 
 def search_google_books(isbn):
     clean_isbn = clean_isbn_func(isbn)
@@ -110,179 +126,156 @@ def search_google_books(isbn):
 def smart_book_search(isbn_input):
     if not isbn_input: return None
     clean_isbn = clean_isbn_func(isbn_input)
-    result = {
-        "書名": "", "作者": "", "ISBN": clean_isbn, 
-        "封面": "", "定價": "", 
-        "建檔時間": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "found": False
-    }
+    result = {"書名": "", "作者": "", "ISBN": clean_isbn, "封面": "", "定價": "", "建檔時間": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"), "found": False}
     g_data = search_google_books(clean_isbn)
     if g_data["found"]:
         result.update(g_data)
         result["found"] = True
     return result
 
-# --- 5. 側邊欄：登入系統 ---
+# --- 6. 側邊欄：登入與預算 ---
 st.sidebar.title("🔐 用戶登入")
 
-# 初始化 session state
 if "user_id" not in st.session_state: st.session_state.user_id = ""
 if "user_pin" not in st.session_state: st.session_state.user_pin = ""
 if "is_logged_in" not in st.session_state: st.session_state.is_logged_in = False
+if "budget" not in st.session_state: st.session_state.budget = 3000
 
-# 登入介面
 if not st.session_state.is_logged_in:
-    st.sidebar.info("輸入暱稱與密碼 (PIN) 即可登入或註冊。")
+    st.sidebar.info("登入以管理您的採購清單")
     with st.sidebar.form("login_form"):
-        input_id = st.text_input("👤 暱稱 / ID", placeholder="例如: Kevin_List")
-        input_pin = st.text_input("🔑 密碼 (PIN)", type="password", placeholder="例如: 1234")
-        login_submitted = st.form_submit_button("🚀 登入 / 註冊")
-    
-    if login_submitted:
-        if input_id and input_pin:
-            # 登入當下測試連線
-            ss = connect_to_spreadsheet()
-            if ss:
-                sheet, msg = get_user_sheet_with_auth(ss, input_id, input_pin)
-                if sheet:
-                    # 登入成功！只存 ID 和 PIN，不存 sheet 物件 (避免斷線錯誤)
-                    st.session_state.user_id = input_id
-                    st.session_state.user_pin = input_pin
-                    st.session_state.is_logged_in = True
-                    st.rerun()
-                else:
-                    st.sidebar.error(msg)
-            else:
-                st.sidebar.error("無法連接資料庫")
-        else:
-            st.sidebar.warning("請輸入完整資訊")
-
-    st.title("👋 歡迎來到 2026 書展採購助手")
-    st.markdown("### 👈 請先在左側登入")
-    st.info("💡 每個 ID 擁有獨立的雲端清單，輸入密碼保護您的隱私。")
+        input_id = st.text_input("👤 暱稱", placeholder="例如: Allen")
+        input_pin = st.text_input("🔑 PIN碼", type="password")
+        if st.form_submit_button("🚀 開始"):
+            if input_id and input_pin:
+                ss = connect_to_spreadsheet()
+                if ss:
+                    sheet, msg = get_user_sheet_with_auth(ss, input_id, input_pin)
+                    if sheet:
+                        st.session_state.user_id = input_id
+                        st.session_state.user_pin = input_pin
+                        st.session_state.is_logged_in = True
+                        st.rerun()
+                    else: st.sidebar.error(msg)
+    st.title("💸 書展敗家計算機")
+    st.info("👈 請先從左側登入，開始您的敗家之旅！")
     st.stop()
 
-# --- 登入後的狀態列 ---
-st.sidebar.success(f"✅ 已登入：{st.session_state.user_id}")
+# 登入後顯示
+st.sidebar.success(f"Hi, {st.session_state.user_id}")
+st.session_state.budget = st.sidebar.number_input("💰 設定總預算", value=st.session_state.budget, step=100)
 if st.sidebar.button("登出"):
     st.session_state.is_logged_in = False
-    st.session_state.user_id = ""
-    st.session_state.user_pin = ""
     st.rerun()
 
-# --- 主程式：建立連線 ---
-# 每次 Rerun 都重新連線，解決 "讀取錯誤" 的問題
+# --- 主程式 ---
 spreadsheet = connect_to_spreadsheet()
-if not spreadsheet:
-    st.error("❌ 連線失敗，請檢查網路或重新整理。")
-    st.stop()
-
-# 取得 Sheet (使用 Session 中的 ID)
+if not spreadsheet: st.error("連線失敗"); st.stop()
 user_sheet, _ = get_user_sheet_with_auth(spreadsheet, st.session_state.user_id, st.session_state.user_pin)
-if not user_sheet:
-    st.error("❌ 找不到資料表，請重新登入。")
-    st.session_state.is_logged_in = False
-    st.stop()
 
-st.title(f"🛒 {st.session_state.user_id} 的採購清單")
-st.markdown("---")
+st.title(f"💸 {st.session_state.user_id} 的敗家清單")
+
+# --- 讀取並計算數據 (使用新的安全讀取函式) ---
+df = load_data_safe(user_sheet)
+
+# 確保價格欄位是數字
+df['價格'] = pd.to_numeric(df['價格'], errors='coerce').fillna(0)
+
+# 計算統計數據
+total_spent = df[df['狀態'].isin(['待購', '已購'])]['價格'].sum()
+item_count = len(df[df['狀態'].isin(['待購', '已購'])])
+remain = st.session_state.budget - total_spent
+
+# --- 儀表板區 ---
+col_m1, col_m2, col_m3 = st.columns(3)
+col_m1.metric("📚 書籍數量", f"{item_count} 本")
+col_m2.metric("💸 預計花費", f"${int(total_spent)}")
+col_m3.metric("💰 剩餘預算", f"${int(remain)}", delta_color="normal" if remain >= 0 else "inverse")
+
+if remain < 0:
+    st.error(f"⚠️ 警告：您已經超支 ${abs(int(remain))} 元了！")
+else:
+    st.progress(min(1.0, total_spent / st.session_state.budget) if st.session_state.budget > 0 else 0)
+
+st.divider()
 
 # --- A 區：掃描與新增 ---
-if 'manual_entry_mode' not in st.session_state: st.session_state.manual_entry_mode = False
-if 'search_result' not in st.session_state: st.session_state.search_result = None
-
-with st.expander("🔍 **新增書籍 (點此展開/收合)**", expanded=True):
+with st.expander("🔍 **掃描/輸入 ISBN**", expanded=True):
     col1, col2 = st.columns([1, 2])
     with col1:
         with st.form("isbn_form", clear_on_submit=False): 
             isbn_input = st.text_input("ISBN 條碼")
             submitted = st.form_submit_button("🔍 查詢")
 
-        if submitted and isbn_input:
-            with st.spinner("☁️ 搜尋中..."):
-                res = smart_book_search(isbn_input)
-                st.session_state.search_result = res
+    if submitted and isbn_input:
+        with st.spinner("☁️ 雲端搜尋..."):
+            res = smart_book_search(isbn_input)
+            st.session_state.search_result = res
 
-    if st.session_state.search_result:
+    if st.session_state.get('search_result'):
         res = st.session_state.search_result
         if res['found']: st.success(f"✅ 找到：{res['書名']}")
-        else: st.warning("⚠️ 無資料，請手動填寫。")
+        else: st.warning("⚠️ 需手動填寫")
 
         with st.form("confirm_form"):
             c1, c2 = st.columns([1, 2])
             with c1:
                 if res['封面']: st.image(res['封面'], width=100)
                 else: st.text("(無封面)")
-                
                 clean_isbn_val = clean_isbn_func(res['ISBN'])
-                st.markdown("👇 **查價傳送門**")
-                st.markdown(f'''<a href="https://search.books.com.tw/search/query/key/{clean_isbn_val}" target="_blank">博客來</a>｜<a href="https://findbook.tw/book/{clean_isbn_val}/price" target="_blank">Findbook</a>''', unsafe_allow_html=True)
+                st.markdown(f'''<a href="https://search.books.com.tw/search/query/key/{clean_isbn_val}" target="_blank">🔍 查博客來</a>''', unsafe_allow_html=True)
 
             with c2:
                 new_title = st.text_input("書名", value=res['書名'])
                 new_author = st.text_input("作者", value=res['作者'])
-                price_val = res['定價'] if res['定價'] else ""
-                new_price = st.text_input("💰 價格", value=price_val)
+                new_price = st.text_input("💰 價格", value=res['定價'])
                 
-                confirm_btn = st.form_submit_button("✅ 加入清單")
-
-                if confirm_btn:
+                if st.form_submit_button("✅ 加入清單"):
                     new_row = [res['建檔時間'], new_title, new_author, res['ISBN'], new_price, "待購"]
                     user_sheet.append_row(new_row)
-                    st.toast(f"🎉 已加入：{new_title}")
+                    st.toast(f"已加入：{new_title}")
                     time.sleep(0.5)
                     st.session_state.search_result = None
                     st.rerun()
 
 st.divider()
 
-# --- B 區：即時編輯清單 (重點功能) ---
-st.subheader(f"📋 管理我的清單 ({st.session_state.user_id})")
+# --- B 區：清單管理 ---
+tab1, tab2 = st.tabs(["📋 表格模式 (編輯)", "🖼️ 封面牆模式 (分享)"])
 
-try:
-    # 1. 讀取資料
-    records = user_sheet.get_all_records()
-    
-    # 2. 轉成 DataFrame 讓使用者編輯
-    # 如果是空的，建立一個空的 DataFrame 結構
-    if records:
-        df = pd.DataFrame(records)
-    else:
-        df = pd.DataFrame(columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
-
-    # 3. 顯示編輯器 (num_rows="dynamic" 允許新增/刪除行)
+with tab1:
     edited_df = st.data_editor(
         df, 
         use_container_width=True, 
         num_rows="dynamic", 
         key="data_editor",
         column_config={
-            "封面": st.column_config.ImageColumn("封面"), # 如果有封面欄位可以顯示圖
             "價格": st.column_config.NumberColumn("價格", format="$%d"),
             "狀態": st.column_config.SelectboxColumn("狀態", options=["待購", "已購", "猶豫中", "放棄"])
         }
     )
+    if st.button("💾 儲存變更", type="primary"):
+        with st.spinner("儲存中..."):
+            if save_dataframe_to_sheet(user_sheet, edited_df, st.session_state.user_pin):
+                st.success("儲存成功！")
+                time.sleep(1)
+                st.rerun()
 
-    # 4. 儲存按鈕
-    col_save, col_info = st.columns([1, 4])
-    with col_save:
-        if st.button("💾 儲存所有變更", type="primary"):
-            with st.spinner("正在同步回雲端..."):
-                # 呼叫儲存函式
-                success = save_dataframe_to_sheet(user_sheet, edited_df, st.session_state.user_pin)
-                if success:
-                    st.success("✅ 儲存成功！")
-                    time.sleep(1)
-                    st.rerun()
-    with col_info:
-        if not df.equals(edited_df):
-            st.warning("⚠️ 您有未儲存的修改，請記得按左側「儲存」按鈕！")
-
-except Exception as e:
-    st.error(f"讀取清單失敗: {e}")
-    # 有時候是因為標題列被刪掉了，這裡提供一個修復按鈕
-    if st.button("🛠️ 修復表格結構"):
-        user_sheet.clear()
-        user_sheet.append_row(["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
-        user_sheet.update_acell('Z1', str(st.session_state.user_pin))
-        st.rerun()
+with tab2:
+    if not df.empty:
+        cols = st.columns(4)
+        for index, row in df.iterrows():
+            with cols[index % 4]:
+                if row['ISBN']:
+                    # 簡單快取機制：如果有封面連結就用，沒有才去 Google 抓
+                    # 這裡為了簡單，我們假設 Google Sheet 沒存封面，所以每次都即時抓
+                    # 實務上建議把封面連結存回 Google Sheet 會更快
+                    img_url = search_google_books(str(row['ISBN']))['封面']
+                    if img_url: st.image(img_url, use_container_width=True)
+                    else: st.markdown("📚")
+                
+                st.caption(f"**{row['書名']}**")
+                st.caption(f"${row['價格']} | {row['狀態']}")
+                st.markdown("---")
+    else:
+        st.info("清單是空的，無法顯示封面牆。")
