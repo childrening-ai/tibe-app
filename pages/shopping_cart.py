@@ -43,62 +43,45 @@ def get_user_sheet_with_auth(spreadsheet, user_id, pin_code, login_mode=True):
         return sheet, "Success"
     except gspread.WorksheetNotFound:
         try:
-            sheet = spreadsheet.add_worksheet(title=safe_id, rows=100, cols=26)
-            # 建立時先給標題
+            # 🔥 重大修正：rows=1
+            # 建立時只給 1 行 (標題列)，確保之後 append_row 一定寫在第 2 行
+            sheet = spreadsheet.add_worksheet(title=safe_id, rows=1, cols=26)
             sheet.append_row(["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
             sheet.update_acell('Z1', str(pin_code))
             return sheet, "Success"
-        except Exception:
-            return None, "建立失敗"
+        except Exception as e:
+            return None, f"建立失敗: {e}"
 
-# --- 3. 資料讀取 (🔥 強制補齊空位，解決空白行問題) ---
+# --- 3. 資料讀取 ---
 def load_data_safe(sheet):
     try:
-        all_values = sheet.get_all_values()
-        
-        # 定義標準欄位
-        columns = ["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"]
-        expected_len = len(columns)
-
-        if len(all_values) <= 1:
-            return pd.DataFrame(columns=columns)
-        
-        # 略過第一列標題
-        raw_data = all_values[1:]
-        clean_data = []
-
-        for row in raw_data:
-            # 1. 確保每一列都是 List (防呆)
-            if not isinstance(row, list): continue
-            
-            # 2. 如果長度不夠，補上空字串
-            if len(row) < expected_len:
-                row = row + [""] * (expected_len - len(row))
-            
-            # 3. 如果長度太長，切掉後面的 (只取前6個)
-            clean_data.append(row[:expected_len])
-        
-        df = pd.DataFrame(clean_data, columns=columns)
-        return df
-    except Exception as e:
-        st.error(f"資料讀取異常: {e}")
+        # 使用 get_all_records 最簡單直覺，如果有空行問題我們用 rows=1 解決了
+        records = sheet.get_all_records()
+        if not records:
+            return pd.DataFrame(columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
+        return pd.DataFrame(records)
+    except Exception:
+        # 如果連標題都沒了，回傳空表
         return pd.DataFrame(columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
 
-# --- 4. 資料儲存 (🔥 處理 NaN 避免寫入錯誤) ---
+# --- 4. 資料儲存 (編輯模式用) ---
 def save_dataframe_to_sheet(sheet, df, pin_code):
     try:
-        # 將 NaN 轉為空字串，Google Sheet 才看得懂
         df = df.fillna("")
-        
-        # 準備資料
         data_to_write = [df.columns.values.tolist()] + df.values.tolist()
         
-        # 更新範圍 (A1 到 F + 行數)
-        num_rows = len(data_to_write)
-        range_str = f"A1:F{num_rows}"
+        # 為了相容性，這裡改用 resize + update
+        # 1. 先清空
+        sheet.clear()
         
-        sheet.update(range_name=range_str, values=data_to_write)
-        sheet.update_acell('Z1', str(pin_code)) # 確保密碼不見
+        # 2. 調整大小符合資料量 (重要！避免多餘空行)
+        sheet.resize(rows=len(data_to_write), cols=26)
+        
+        # 3. 寫入資料 (指定範圍 A1 開始，最安全)
+        sheet.update(range_name='A1', values=data_to_write)
+        
+        # 4. 補回密碼
+        sheet.update_acell('Z1', str(pin_code))
         return True
     except Exception as e:
         st.error(f"儲存失敗: {e}")
@@ -159,7 +142,7 @@ if not st.session_state.is_logged_in:
                         st.rerun()
                     else: st.sidebar.error(msg)
     st.title("💸 書展敗家計算機")
-    st.info("👈 請先從左側登入，開始您的敗家之旅！")
+    st.info("👈 請先從左側登入")
     st.stop()
 
 # 登入後顯示
@@ -176,13 +159,9 @@ user_sheet, _ = get_user_sheet_with_auth(spreadsheet, st.session_state.user_id, 
 
 st.title(f"💸 {st.session_state.user_id} 的敗家清單")
 
-# --- 讀取並計算數據 (使用新的安全讀取函式) ---
+# --- 讀取資料 ---
 df = load_data_safe(user_sheet)
-
-# 確保價格欄位是數字
 df['價格'] = pd.to_numeric(df['價格'], errors='coerce').fillna(0)
-
-# 計算統計數據
 total_spent = df[df['狀態'].isin(['待購', '已購'])]['價格'].sum()
 item_count = len(df[df['狀態'].isin(['待購', '已購'])])
 remain = st.session_state.budget - total_spent
@@ -209,7 +188,7 @@ with st.expander("🔍 **掃描/輸入 ISBN**", expanded=True):
             submitted = st.form_submit_button("🔍 查詢")
 
     if submitted and isbn_input:
-        with st.spinner("☁️ 雲端搜尋..."):
+        with st.spinner("☁️ 搜尋中..."):
             res = smart_book_search(isbn_input)
             st.session_state.search_result = res
 
@@ -231,13 +210,17 @@ with st.expander("🔍 **掃描/輸入 ISBN**", expanded=True):
                 new_author = st.text_input("作者", value=res['作者'])
                 new_price = st.text_input("💰 價格", value=res['定價'])
                 
+                # 🔥 修改：回歸 append_row (最穩的寫法)
                 if st.form_submit_button("✅ 加入清單"):
                     new_row = [res['建檔時間'], new_title, new_author, res['ISBN'], new_price, "待購"]
-                    user_sheet.append_row(new_row)
-                    st.toast(f"已加入：{new_title}")
-                    time.sleep(0.5)
-                    st.session_state.search_result = None
-                    st.rerun()
+                    try:
+                        user_sheet.append_row(new_row)
+                        st.toast(f"已加入：{new_title}")
+                        time.sleep(0.5)
+                        st.session_state.search_result = None
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"寫入失敗: {e}")
 
 st.divider()
 
@@ -276,4 +259,16 @@ with tab2:
                 st.caption(f"${row['價格']} | {row['狀態']}")
                 st.markdown("---")
     else:
-        st.info("清單是空的，無法顯示封面牆。")
+        st.info("清單是空的")
+
+# --- 🔥 緊急修復按鈕 ---
+# 只有當偵測到 sheet 是空的(可能壞了)才顯示
+if df.empty:
+    st.markdown("---")
+    st.warning("🛠️ 偵測到清單可能有問題 (標題遺失或格式錯誤)？")
+    if st.button("🚨 重置並修復我的清單 (資料會清空)"):
+        user_sheet.clear()
+        user_sheet.resize(rows=1, cols=26)
+        user_sheet.append_row(["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
+        user_sheet.update_acell('Z1', str(st.session_state.user_pin))
+        st.success("已重置！請重新整理頁面。")
