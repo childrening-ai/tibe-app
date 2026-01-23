@@ -8,14 +8,14 @@ import time
 import re
 import urllib3
 
-# 1. 頁面設定 (必須是第一行)
-st.set_page_config(page_title="書展敗家診斷版", page_icon="🚑", layout="wide")
+# 1. 頁面設定
+st.set_page_config(page_title="2026 書展採購清單", page_icon="📚", layout="wide")
 
 # 設定區
 SHEET_NAME = "2026國際書展採購清單"
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- 2. 連線功能 (移除 Cache，確保每次都連線) ---
+# --- 2. 連線功能 (無快取，確保穩定) ---
 def connect_to_spreadsheet():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     try:
@@ -30,10 +30,9 @@ def connect_to_spreadsheet():
         spreadsheet = client.open(SHEET_NAME)
         return spreadsheet
     except Exception as e:
-        st.error(f"❌ 連線失敗: {e}")
         return None
 
-# --- 3. 取得分頁 (包含暴力初始化) ---
+# --- 3. 取得分頁 (核心穩定邏輯) ---
 def get_or_create_sheet(spreadsheet, user_id):
     safe_id = re.sub(r'[^a-zA-Z0-9_\u4e00-\u9fa5]', '', str(user_id))
     if not safe_id: return None
@@ -42,17 +41,16 @@ def get_or_create_sheet(spreadsheet, user_id):
         sheet = spreadsheet.worksheet(safe_id)
         return sheet
     except gspread.WorksheetNotFound:
-        # 如果找不到，建立新的，並給它 20 行空間
+        # 🔥 關鍵：建立時只給 1 行標題，避免幽靈空行
         try:
-            sheet = spreadsheet.add_worksheet(title=safe_id, rows=20, cols=10)
-            # 強制寫入標題
+            sheet = spreadsheet.add_worksheet(title=safe_id, rows=1, cols=10)
             sheet.update(range_name='A1', values=[["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"]])
             return sheet
         except Exception as e:
-            st.error(f"❌ 建立分頁失敗: {e}")
+            st.error(f"建立分頁失敗: {e}")
             return None
 
-# --- 4. 爬蟲 (保留原本功能) ---
+# --- 4. 爬蟲工具 ---
 def clean_isbn_func(isbn_raw):
     return str(isbn_raw).strip().replace("-", "").replace(" ", "").replace("\n", "").replace("\t", "") if isbn_raw else ""
 
@@ -82,109 +80,157 @@ def smart_book_search(isbn_input):
         result["found"] = True
     return result
 
-# --- 介面開始 ---
-st.title("🚑 書展購物車 (強制寫入除錯版)")
+# --- 5. 資料儲存 (用於編輯模式) ---
+def save_data_overwrite(sheet, df):
+    try:
+        # 轉成 List
+        data = [df.columns.values.tolist()] + df.values.tolist()
+        # 清空並重寫 (這是編輯功能必需的)
+        sheet.clear()
+        sheet.update(range_name='A1', values=data)
+        return True
+    except Exception as e:
+        st.error(f"儲存失敗: {e}")
+        return False
 
-# 側邊欄登入
-st.sidebar.title("登入")
-user_id = st.sidebar.text_input("輸入暱稱 (例如 Test01)")
+# --- 主程式介面 ---
 
-if not user_id:
-    st.warning("請先在左側輸入暱稱")
+# 側邊欄：登入
+st.sidebar.title("🔐 登入")
+if "user_id" not in st.session_state: st.session_state.user_id = ""
+if "budget" not in st.session_state: st.session_state.budget = 3000
+
+input_id = st.sidebar.text_input("輸入暱稱 (ID)", value=st.session_state.user_id)
+if input_id:
+    st.session_state.user_id = input_id
+    st.sidebar.success(f"Hi, {input_id}")
+    st.session_state.budget = st.sidebar.number_input("💰 總預算", value=st.session_state.budget, step=500)
+else:
+    st.title("📚 2026 書展採購清單")
+    st.info("👈 請先在左側輸入暱稱以開始使用")
     st.stop()
 
-# 1. 嘗試連線
+# 連線與讀取
 ss = connect_to_spreadsheet()
-if not ss:
-    st.stop()
+if not ss: st.stop()
+sheet = get_or_create_sheet(ss, input_id)
+if not sheet: st.stop()
 
-# 2. 取得分頁
-sheet = get_or_create_sheet(ss, user_id)
-if not sheet:
-    st.error("無法取得分頁，請檢查 Google Sheet 權限。")
-    st.stop()
+# 標題區
+st.title(f"🛒 {input_id} 的書展清單")
 
-st.success(f"✅ 已連線至分頁：{user_id}")
+# --- 讀取資料並整理 ---
+try:
+    data = sheet.get_all_values()
+    if len(data) > 0:
+        df = pd.DataFrame(data[1:], columns=data[0])
+    else:
+        # 萬一真的全是空的，重建標題
+        df = pd.DataFrame(columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
+except:
+    df = pd.DataFrame(columns=["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
 
-# --- 診斷區 (直接顯示 Sheet 裡的原始資料) ---
-with st.expander("🕵️‍♂️ 檢視 Google Sheet 原始資料 (Debug)", expanded=False):
-    raw_data = sheet.get_all_values()
-    st.write(f"目前總行數: {len(raw_data)}")
-    st.write(raw_data)
+# 預算計算
+df['價格'] = pd.to_numeric(df['價格'], errors='coerce').fillna(0)
+total = df[df['狀態'].isin(['待購', '已購'])]['價格'].sum()
+remain = st.session_state.budget - total
 
-# --- A. 新增書籍 (最單純的寫入) ---
-col1, col2 = st.columns([1, 2])
-with col1:
-    isbn_input = st.text_input("輸入 ISBN", key="isbn_input")
-    if st.button("🔍 查詢"):
-        if isbn_input:
-            res = smart_book_search(isbn_input)
-            st.session_state.temp_res = res
-        else:
-            st.warning("請輸入 ISBN")
+# 儀表板
+col1, col2, col3 = st.columns(3)
+col1.metric("📚 書籍數", f"{len(df)} 本")
+col2.metric("💸 預計花費", f"${int(total)}")
+col3.metric("💰 剩餘預算", f"${int(remain)}", delta_color="normal" if remain >= 0 else "inverse")
 
-# 顯示搜尋結果與寫入按鈕
-if 'temp_res' in st.session_state and st.session_state.temp_res:
-    res = st.session_state.temp_res
-    st.info(f"找到：{res['書名']}")
-    
-    with st.form("add_book_form"):
-        f_title = st.text_input("書名", value=res['書名'])
-        f_author = st.text_input("作者", value=res['作者'])
-        f_price = st.text_input("價格", value=res['定價'])
-        
-        submit = st.form_submit_button("➕ 寫入 Google Sheet")
-        
-        if submit:
-            # 準備資料
-            new_row = [
-                res['建檔時間'],
-                f_title,
-                f_author,
-                res['ISBN'],
-                f_price,
-                "待購"
-            ]
-            
-            try:
-                # 🔥 這裡使用最暴力的 append_row，不做任何檢查
-                sheet.append_row(new_row)
-                st.success(f"✅ 成功寫入：{f_title}")
-                # 清除暫存並重整
-                del st.session_state.temp_res
-                time.sleep(1)
-                st.rerun()
-            except Exception as e:
-                st.error(f"❌ 寫入失敗: {e}")
+if remain < 0:
+    st.error(f"⚠️ 預算超支 ${abs(int(remain))} 元！")
 
 st.divider()
 
-# --- B. 讀取清單 (最單純的讀取) ---
-st.subheader("📋 目前清單")
+# --- A 區：新增書籍 ---
+with st.expander("🔍 **新增書籍 (掃描/搜尋)**", expanded=True):
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        isbn_in = st.text_input("輸入 ISBN")
+        if st.button("🔍 找書"):
+            if isbn_in:
+                res = smart_book_search(isbn_in)
+                st.session_state.search_res = res
 
-try:
-    # 重新讀取資料
-    data = sheet.get_all_values()
-    
-    # 如果只有少於 1 行 (代表連標題都沒有)
-    if len(data) < 1:
-        st.warning("⚠️ 試算表是完全空的 (連標題都沒有)。")
-        if st.button("🛠️ 建立標題列"):
-            sheet.append_row(["建檔時間", "書名", "作者", "ISBN", "價格", "狀態"])
-            st.rerun()
-            
-    # 如果有資料
+    if 'search_res' in st.session_state and st.session_state.search_res:
+        res = st.session_state.search_res
+        if res['found']: st.success(f"✅ 找到：{res['書名']}")
+        else: st.warning("⚠️ 未找到資料，請手動填寫")
+
+        with st.form("add_form"):
+            cc1, cc2 = st.columns([1, 2])
+            with cc1:
+                if res['封面']: st.image(res['封面'], width=100)
+                
+                # 查價連結
+                clean_isbn = clean_isbn_func(res['ISBN'])
+                st.markdown(f'''
+                <a href="https://search.books.com.tw/search/query/key/{clean_isbn}" target="_blank">🔍 博客來</a>｜
+                <a href="https://findbook.tw/book/{clean_isbn}/price" target="_blank">🔍 Findbook</a>
+                ''', unsafe_allow_html=True)
+
+            with cc2:
+                n_title = st.text_input("書名", value=res['書名'])
+                n_author = st.text_input("作者", value=res['作者'])
+                n_price = st.text_input("價格", value=res['定價'])
+                
+                if st.form_submit_button("➕ 加入清單"):
+                    new_row = [res['建檔時間'], n_title, n_author, res['ISBN'], n_price, "待購"]
+                    try:
+                        sheet.append_row(new_row) # 使用最穩的 append_row
+                        st.toast(f"已加入：{n_title}")
+                        time.sleep(0.5)
+                        del st.session_state.search_res
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"寫入失敗: {e}")
+
+st.divider()
+
+# --- B 區：清單管理 (編輯 & 封面牆) ---
+tab1, tab2 = st.tabs(["📝 編輯清單", "🖼️ 封面牆"])
+
+with tab1:
+    if df.empty:
+        st.info("目前沒有書籍。")
     else:
-        # 第一列是標題
-        headers = data[0]
-        # 後面是內容
-        rows = data[1:]
+        # 使用 data_editor 讓使用者可以修改
+        edited_df = st.data_editor(
+            df,
+            use_container_width=True,
+            num_rows="dynamic",
+            key="editor",
+            column_config={
+                "價格": st.column_config.NumberColumn("價格", format="$%d"),
+                "狀態": st.column_config.SelectboxColumn("狀態", options=["待購", "已購", "猶豫中", "放棄"])
+            }
+        )
         
-        if rows:
-            df = pd.DataFrame(rows, columns=headers)
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.info("目前沒有書籍資料。")
+        col_save, _ = st.columns([1, 4])
+        with col_save:
+            if st.button("💾 儲存修改", type="primary"):
+                with st.spinner("同步回雲端中..."):
+                    if save_data_overwrite(sheet, edited_df):
+                        st.success("✅ 儲存成功！")
+                        time.sleep(1)
+                        st.rerun()
 
-except Exception as e:
-    st.error(f"讀取顯示失敗: {e}")
+with tab2:
+    if not df.empty:
+        cols = st.columns(4)
+        for idx, row in df.iterrows():
+            with cols[idx % 4]:
+                # 簡單顯示封面
+                if row['ISBN']:
+                    img = search_google_books(row['ISBN'])['封面']
+                    if img: st.image(img, use_container_width=True)
+                    else: st.markdown("📚")
+                st.caption(f"**{row['書名']}**")
+                st.caption(f"${row['價格']} | {row['狀態']}")
+                st.markdown("---")
+    else:
+        st.info("尚無書籍可展示")
