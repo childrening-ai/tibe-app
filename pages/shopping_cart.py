@@ -40,16 +40,20 @@ def connect_to_sheet():
 # --- 2. 爬蟲：國家圖書館 (NCL) - 依據截圖優化版 ---
 def search_ncl(isbn):
     """
-    策略優化：
-    Level 1 (列表頁): 抓取 封面(Base64), 書名, 作者, 出版者, 詳細頁連結
-    Level 2 (詳細頁): 專門抓取 "定價"
+    強韌版爬蟲：
+    1. 增加 Headers 偽裝
+    2. 支援 fallback 機制 (如果表格抓不到，改抓超連結)
     """
     clean_isbn = isbn.replace("-", "").replace(" ", "")
     base_url = "https://isbn.ncl.edu.tw/NEW_ISBNNet/"
     search_url = f"{base_url}H30_SearchBooks.php"
     
     session = requests.Session()
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+    # 🔥 增加 Referer，讓國圖以為我們是從首頁點進去的
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Referer': 'https://isbn.ncl.edu.tw/NEW_ISBNNet/H30_SearchBooks.php' 
+    }
     
     result = {
         "source": "NCL",
@@ -58,66 +62,76 @@ def search_ncl(isbn):
     }
 
     try:
-        # [Step 1] 搜尋列表頁 (Level 1)
+        # [Step 1] 搜尋列表頁
         params = {
             "FO_SearchValue0": clean_isbn,
             "FO_SearchField0": "ISBN",
             "Pact": "DisplayAll4Simple",
         }
-        res1 = session.get(search_url, params=params, headers=headers, timeout=10)
+        res1 = session.get(search_url, params=params, headers=headers, timeout=15)
         res1.encoding = 'utf-8'
+        
+        # 🐛 除錯：如果在終端機看到非 200，代表被擋了
+        if res1.status_code != 200:
+            print(f"❌ 國圖連線失敗，狀態碼: {res1.status_code}")
+            return None
+            
         soup1 = BeautifulSoup(res1.text, 'html.parser')
         
-        # 根據您的截圖，資料在 <table class="table-searchbooks"> 裡面
-        # 我們直接找含有 data-th 屬性的 td，這樣最準
-        
-        # 1. 抓連結與書名 (data-th="書名")
+        # --- 策略 A: 精準表格抓取 (您原本提供的方法) ---
         title_td = soup1.find("td", {"data-th": "書名"})
         detail_link = ""
         
         if title_td:
+            # 成功找到表格！
             link_tag = title_td.find("a")
             if link_tag:
                 result["書名"] = link_tag.text.strip()
                 detail_link = link_tag['href']
             else:
-                result["書名"] = title_td.text.strip() # 萬一沒連結
-        else:
-            return None # 連書名都沒找到，代表沒這本書
+                result["書名"] = title_td.text.strip()
             
-        # 2. 抓封面圖片 (data-th="封面圖") - Base64
-        img_td = soup1.find("td", {"data-th": "封面圖"}) 
-        if img_td:
-            img_tag = img_td.find("img")
-            if img_tag and 'src' in img_tag.attrs:
-                result["封面"] = img_tag['src'] # 抓到那串長長的 Base64
+            # 順便抓其他欄位
+            img_td = soup1.find("td", {"data-th": "封面圖"})
+            if img_td:
+                img_tag = img_td.find("img")
+                if img_tag and 'src' in img_tag.attrs:
+                    result["封面"] = img_tag['src']
 
-        # 3. 抓作者 (data-th="作者")
-        author_td = soup1.find("td", {"data-th": "作者"})
-        if author_td:
-            result["作者"] = author_td.text.strip()
+            author_td = soup1.find("td", {"data-th": "作者"})
+            if author_td: result["作者"] = author_td.text.strip()
 
-        # 4. 抓出版者 (data-th="出版者")
-        pub_td = soup1.find("td", {"data-th": "出版者"})
-        if pub_td:
-            result["出版社"] = pub_td.text.strip()
+            pub_td = soup1.find("td", {"data-th": "出版者"})
+            if pub_td: result["出版社"] = pub_td.text.strip()
 
-        # [Step 2] 進入詳細頁 (Level 2) - 只為了抓價格
+        # --- 策略 B: 暴力連結抓取 (保底機制) ---
+        else:
+            # 如果表格結構變了，或是 data-th 抓不到，直接找「詳目顯示」的連結
+            # print("⚠️ 策略 A 失敗，嘗試策略 B...")
+            link_tag = soup1.find("a", href=re.compile(r"main_DisplayRecord\.php"))
+            
+            if link_tag:
+                result["書名"] = link_tag.text.strip()
+                detail_link = link_tag['href']
+                # 策略 B 比較難抓到封面和作者，但至少能抓到書名，不至於回傳失敗
+            else:
+                # 真的連連結都沒有，那就是沒這本書
+                return None
+
+        # [Step 2] 進入詳細頁 (為了抓定價)
         if detail_link:
             try:
                 target_url = base_url + detail_link
-                res2 = session.get(target_url, headers=headers, timeout=5) # 這裡給短一點時間，失敗就算了
+                res2 = session.get(target_url, headers=headers, timeout=10)
                 res2.encoding = 'utf-8'
                 soup2 = BeautifulSoup(res2.text, 'html.parser')
                 
-                # 抓定價 (data-th="定價")
                 price_td = soup2.find("td", {"data-th": "定價"})
                 if price_td:
                     raw_price = price_td.text.strip()
-                    # 清洗價格 (把 NT$ 拿掉，只留數字)
                     result["定價"] = re.sub(r"[^\d]", "", raw_price)
             except:
-                print("Level 2 抓價格失敗，但不影響基本資料")
+                pass # 抓價格失敗就算了，至少有書名
 
         return result
 
