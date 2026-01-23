@@ -7,72 +7,20 @@ from bs4 import BeautifulSoup
 import datetime
 import time
 import re
+import urllib3 # 引入這個來關閉警告
 
 # 設定頁面
 st.set_page_config(page_title="掃碼購物車", page_icon="🛒", layout="wide")
 
 st.title("🛒 2026 書展掃碼比價 & 採購清單")
-# --- 暫時加入的診斷區塊 (除錯完可刪除) ---
-with st.expander("🔧 網路連線診斷 (Debug Mode)", expanded=True):
-    col_d1, col_d2 = st.columns(2)
-    
-    with col_d1:
-        if st.button("1. 檢查主機 IP 位置"):
-            try:
-                # 查詢這台雲端電腦的對外 IP
-                ip_info = requests.get("https://httpbin.org/ip", timeout=5).json()
-                # 查詢這個 IP 的物理位置 (大概)
-                geo_info = requests.get(f"https://ipapi.co/{ip_info['origin']}/json/", timeout=5).json()
-                
-                st.write(f"**雲端主機 IP:** `{ip_info['origin']}`")
-                st.write(f"**所在國家:** `{geo_info.get('country_name', 'Unknown')}`")
-                st.write(f"**所在城市:** `{geo_info.get('city', 'Unknown')}`")
-                
-                if geo_info.get('country_code') != 'TW':
-                    st.error("⚠️ 警告：您的程式正在「國外」執行，很有可能被國圖擋 IP！")
-                else:
-                    st.success("✅ 您的程式在台灣境內執行。")
-            except Exception as e:
-                st.error(f"無法查詢 IP: {e}")
-
-    with col_d2:
-        if st.button("2. 測試國圖連線回傳"):
-            test_url = "https://isbn.ncl.edu.tw/NEW_ISBNNet/H30_SearchBooks.php"
-            # 這是我們偽裝的 header
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                'Referer': 'https://isbn.ncl.edu.tw/'
-            }
-            try:
-                st.write(f"正在嘗試連線至: `{test_url}` ...")
-                r = requests.get(test_url, headers=headers, timeout=10)
-                
-                st.write(f"**狀態碼 (Status Code):** `{r.status_code}`")
-                
-                if r.status_code == 200:
-                    st.success("連線成功！(200 OK)")
-                    st.text("👇 伺服器回傳內容的前 500 個字：")
-                    st.code(r.text[:500], language='html')
-                    
-                    # 簡單關鍵字檢查
-                    if "系統忙碌" in r.text or "Access Denied" in r.text or "Captcha" in r.text:
-                        st.error("❌ 雖然連上了，但被防火牆 (WAF) 擋住了！")
-                    elif "全國新書資訊網" in r.text:
-                        st.success("✅ 看起來是正常的國圖頁面！")
-                    else:
-                        st.warning("⚠️ 回傳內容怪怪的，可能不是正確頁面。")
-                elif r.status_code == 403:
-                    st.error("⛔ 403 Forbidden：被拒絕存取 (通常是擋 IP 或 User-Agent)。")
-                else:
-                    st.error(f"❌ 連線異常：{r.status_code}")
-                    
-            except Exception as e:
-                st.error(f"💀 連線直接失敗 (Timeout/Connection Error): {e}")
 st.markdown("輸入 ISBN，自動抓取 **國家圖書館** 與 **Google** 資料，建立最精準的採購清單！")
 
 # --- 設定區 ---
-# 🔥 更新年份：請確保 Google Drive 裡的試算表名稱跟這裡一模一樣
+# 🔥 請確認 Google Sheet 名稱正確
 SHEET_NAME = "2026國際書展採購清單"
+
+# 🤫 關閉 "InsecureRequestWarning" 警告 (因為我們要略過 SSL 檢查)
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- 1. 連接 Google Sheets ---
 @st.cache_resource
@@ -93,19 +41,13 @@ def connect_to_sheet():
         print(f"連線錯誤: {e}")
         return None
 
-# --- 2. 爬蟲：國家圖書館 (NCL) - 依據截圖優化版 ---
+# --- 2. 爬蟲：國家圖書館 (NCL) - 略過 SSL 驗證版 ---
 def search_ncl(isbn):
-    """
-    強韌版爬蟲：
-    1. 增加 Headers 偽裝
-    2. 支援 fallback 機制 (如果表格抓不到，改抓超連結)
-    """
     clean_isbn = isbn.replace("-", "").replace(" ", "")
     base_url = "https://isbn.ncl.edu.tw/NEW_ISBNNet/"
     search_url = f"{base_url}H30_SearchBooks.php"
     
     session = requests.Session()
-    # 🔥 增加 Referer，讓國圖以為我們是從首頁點進去的
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Referer': 'https://isbn.ncl.edu.tw/NEW_ISBNNet/H30_SearchBooks.php' 
@@ -124,22 +66,22 @@ def search_ncl(isbn):
             "FO_SearchField0": "ISBN",
             "Pact": "DisplayAll4Simple",
         }
-        res1 = session.get(search_url, params=params, headers=headers, timeout=15)
+        
+        # 🔥 關鍵修改：verify=False (略過 SSL 檢查)
+        res1 = session.get(search_url, params=params, headers=headers, timeout=15, verify=False)
         res1.encoding = 'utf-8'
         
-        # 🐛 除錯：如果在終端機看到非 200，代表被擋了
         if res1.status_code != 200:
             print(f"❌ 國圖連線失敗，狀態碼: {res1.status_code}")
             return None
             
         soup1 = BeautifulSoup(res1.text, 'html.parser')
         
-        # --- 策略 A: 精準表格抓取 (您原本提供的方法) ---
+        # --- 抓取邏輯 (維持原本針對截圖優化的版本) ---
         title_td = soup1.find("td", {"data-th": "書名"})
         detail_link = ""
         
         if title_td:
-            # 成功找到表格！
             link_tag = title_td.find("a")
             if link_tag:
                 result["書名"] = link_tag.text.strip()
@@ -147,7 +89,6 @@ def search_ncl(isbn):
             else:
                 result["書名"] = title_td.text.strip()
             
-            # 順便抓其他欄位
             img_td = soup1.find("td", {"data-th": "封面圖"})
             if img_td:
                 img_tag = img_td.find("img")
@@ -160,25 +101,21 @@ def search_ncl(isbn):
             pub_td = soup1.find("td", {"data-th": "出版者"})
             if pub_td: result["出版社"] = pub_td.text.strip()
 
-        # --- 策略 B: 暴力連結抓取 (保底機制) ---
         else:
-            # 如果表格結構變了，或是 data-th 抓不到，直接找「詳目顯示」的連結
-            # print("⚠️ 策略 A 失敗，嘗試策略 B...")
+            # Fallback: 暴力找連結
             link_tag = soup1.find("a", href=re.compile(r"main_DisplayRecord\.php"))
-            
             if link_tag:
                 result["書名"] = link_tag.text.strip()
                 detail_link = link_tag['href']
-                # 策略 B 比較難抓到封面和作者，但至少能抓到書名，不至於回傳失敗
             else:
-                # 真的連連結都沒有，那就是沒這本書
                 return None
 
         # [Step 2] 進入詳細頁 (為了抓定價)
         if detail_link:
             try:
                 target_url = base_url + detail_link
-                res2 = session.get(target_url, headers=headers, timeout=10)
+                # 🔥 關鍵修改：這裡也要 verify=False
+                res2 = session.get(target_url, headers=headers, timeout=10, verify=False)
                 res2.encoding = 'utf-8'
                 soup2 = BeautifulSoup(res2.text, 'html.parser')
                 
@@ -187,7 +124,7 @@ def search_ncl(isbn):
                     raw_price = price_td.text.strip()
                     result["定價"] = re.sub(r"[^\d]", "", raw_price)
             except:
-                pass # 抓價格失敗就算了，至少有書名
+                pass
 
         return result
 
@@ -218,7 +155,6 @@ def smart_book_search(isbn):
     if not isbn: return None
     clean_isbn = isbn.replace("-", "").replace(" ", "")
     
-    # 預設結果容器
     final_result = {
         "書名": "", "作者": "", "ISBN": clean_isbn, 
         "封面": "", "定價": "",
@@ -226,7 +162,7 @@ def smart_book_search(isbn):
         "found": False
     }
 
-    # A. 先問 Google (當作備案)
+    # A. 先問 Google
     google_data = search_google_books(clean_isbn)
     if google_data:
         final_result["封面"] = google_data["封面"]
@@ -234,24 +170,18 @@ def smart_book_search(isbn):
         final_result["作者"] = google_data["作者"]
         final_result["found"] = True
 
-    # B. 再問國圖 (主力 - 依據截圖優化)
+    # B. 再問國圖 (主力)
     ncl_data = search_ncl(clean_isbn)
     if ncl_data:
-        # 國圖文字資訊最準，覆蓋 Google
         final_result["書名"] = ncl_data["書名"]
         if ncl_data["出版社"]: 
             final_result["書名"] = f"{ncl_data['書名']} ({ncl_data['出版社']})"
-        
         if ncl_data["作者"]: 
             final_result["作者"] = ncl_data["作者"]
-            
         if ncl_data["定價"]: 
             final_result["定價"] = ncl_data["定價"]
-        
-        # 🔥 重點：如果國圖有圖片 (Base64)，優先使用！
         if ncl_data["封面"]:
             final_result["封面"] = ncl_data["封面"]
-            
         final_result["found"] = True
     
     return final_result
@@ -287,13 +217,11 @@ with col1:
                 if book_data['定價']:
                     info_text += f"💰 定價: ${book_data['定價']} "
                 
-                # 顯示圖片 (支援 Google 網址 或 國圖 Base64)
                 if book_data['封面']:
                     st.image(book_data['封面'], width=120, caption=info_text)
                 elif info_text:
                     st.info(info_text)
 
-                # 準備寫入 Excel
                 save_image_link = book_data['封面']
                 if save_image_link.startswith("data:image"):
                     save_image_link = "國圖封面(Base64不存入)"
