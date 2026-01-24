@@ -192,6 +192,45 @@ st.markdown("""
             accent-color: #FF8C69 !important; /* 勾選後的背景色 */
             cursor: pointer;
         }
+
+        /* --- 10. 增加分頁與內容的間距 (防誤觸) --- */
+        .stTabs [data-baseweb="tab-list"] {
+            margin-bottom: 25px !important; /* 拉開 25px 的距離 */
+            padding-bottom: 5px !important;
+        }
+
+        /* --- 11. 日曆按鈕優化 (去除黑色 + 手機分行) --- */
+        
+        /* A. 去除點擊後的黑色/灰色特效 */
+        .fc-button-active, .fc-button:active, .fc-button:focus {
+            background-color: #FF8C69 !important; /* 維持珊瑚色 */
+            border-color: #FF8C69 !important;
+            color: white !important;
+            box-shadow: none !important; /* 去除外框光暈 */
+            opacity: 1 !important;
+        }
+        
+        /* B. 手機版強制分行顯示 (避免擁擠) */
+        @media only screen and (max-width: 600px) {
+            .fc-header-toolbar {
+                display: flex !important;
+                flex-direction: column !important; /* 改為垂直排列 */
+                gap: 10px !important; /* 上下行之間的間距 */
+            }
+            
+            /* 讓每一區塊 (左中右) 都置中並撐開 */
+            .fc-toolbar-chunk {
+                display: flex !important;
+                justify-content: center !important;
+                width: 100% !important;
+            }
+            
+            /* 微調標題字體，分行後可以稍微大一點 */
+            .fc-toolbar-title {
+                margin: 5px 0 !important;
+            }
+        }
+        
     </style>
 """, unsafe_allow_html=True)
 
