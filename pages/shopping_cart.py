@@ -6,6 +6,9 @@ import datetime
 import time
 import re
 import urllib3
+# 🔥 新增：AI 相關套件
+import google.generativeai as genai
+from PIL import Image
 
 # 1. 頁面設定
 st.set_page_config(page_title="書展採購清單", page_icon="📚", layout="wide")
@@ -13,6 +16,17 @@ st.set_page_config(page_title="書展採購清單", page_icon="📚", layout="wi
 # 設定區
 SHEET_NAME = "2026國際書展採購清單"
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# --- 🔥 新增：初始化 Gemini AI ---
+def configure_genai():
+    try:
+        api_key = st.secrets.get("gemini_api_key")
+        if api_key:
+            genai.configure(api_key=api_key)
+            return True
+        return False
+    except:
+        return False
 
 # --- 2. 連線功能 (穩定版) ---
 def connect_to_spreadsheet():
@@ -38,14 +52,12 @@ def get_user_sheet_with_auth(spreadsheet, user_id, pin_code):
     
     try:
         sheet = spreadsheet.worksheet(safe_id)
-        # 驗證密碼 (讀取 Z1)
         saved_pin = sheet.acell('Z1').value
         if saved_pin and str(saved_pin).strip() != str(pin_code).strip():
             return None, "🔒 密碼錯誤！無法進入。"
         return sheet, "Success"
     except gspread.WorksheetNotFound:
         try:
-            # 建立新分頁：只給標題列
             sheet = spreadsheet.add_worksheet(title=safe_id, rows=1, cols=26)
             headers = ["書名", "出版社", "定價", "折扣", "折扣價", "狀態", "備註"]
             sheet.update(range_name='A1', values=[headers])
@@ -58,7 +70,6 @@ def get_user_sheet_with_auth(spreadsheet, user_id, pin_code):
 def save_data_overwrite(sheet, df, pin_code):
     try:
         df = df.fillna("")
-        # 準備資料：標題 + 內容
         data = [df.columns.values.tolist()] + df.values.tolist()
         sheet.clear()
         sheet.update(range_name='A1', values=data)
@@ -68,7 +79,33 @@ def save_data_overwrite(sheet, df, pin_code):
         st.error(f"儲存失敗: {e}")
         return False
 
+# --- 🔥 新增：AI 辨識函式 ---
+def analyze_image(image):
+    try:
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        prompt = """
+        請分析這張圖片（書本封面、海報或網頁截圖），提取以下資訊。
+        請直接回傳 JSON 格式，不要有Markdown標記，欄位如下：
+        {
+            "書名": "書籍名稱",
+            "出版社": "出版社名稱(若無則留空)",
+            "定價": "純數字(若無則填0)"
+        }
+        """
+        response = model.generate_content([prompt, image])
+        clean_text = response.text.replace("```json", "").replace("```", "").strip()
+        import json
+        return json.loads(clean_text)
+    except Exception as e:
+        st.error(f"AI 辨識失敗: {e}")
+        return None
+
 # --- 主程式介面 ---
+
+# 初始化 Session State (用於 AI 自動填表)
+if "form_title" not in st.session_state: st.session_state.form_title = ""
+if "form_publisher" not in st.session_state: st.session_state.form_publisher = ""
+if "form_price" not in st.session_state: st.session_state.form_price = 0
 
 # [側邊欄] 登入系統
 st.sidebar.title("🔐 用戶登入")
@@ -76,6 +113,9 @@ if "user_id" not in st.session_state: st.session_state.user_id = ""
 if "user_pin" not in st.session_state: st.session_state.user_pin = ""
 if "is_logged_in" not in st.session_state: st.session_state.is_logged_in = False
 if "budget" not in st.session_state: st.session_state.budget = 3000
+
+# 設定 Gemini
+has_ai = configure_genai()
 
 # 未登入介面
 if not st.session_state.is_logged_in:
@@ -95,7 +135,7 @@ if not st.session_state.is_logged_in:
                     else:
                         st.sidebar.error(msg)
     st.title("📚 2026 書展採購清單")
-    st.info("👈 請先從左側登入 (若無帳號，輸入新暱稱與密碼即自動註冊)")
+    st.info("👈 請先從左側登入")
     st.stop()
 
 # 已登入介面
@@ -113,36 +153,23 @@ sheet, _ = get_user_sheet_with_auth(ss, st.session_state.user_id, st.session_sta
 
 st.title(f"🛒 {st.session_state.user_id} 的採購清單")
 
-# --- 資料讀取與處理 (🔥 關鍵修復區) ---
+# --- 資料讀取與處理 ---
 expected_cols = ["書名", "出版社", "定價", "折扣", "折扣價", "狀態", "備註"]
 
 try:
     data = sheet.get_all_values()
-    
     if len(data) > 1:
-        # 有資料 (第一列是標題，第二列開始是數據)
         raw_rows = data[1:]
         clean_rows = []
-        
-        # 強制清洗每一列，確保長度跟 expected_cols 一樣
         for row in raw_rows:
-            # 補齊長度
             if len(row) < len(expected_cols):
                 row = row + [""] * (len(expected_cols) - len(row))
-            # 截斷多餘
             row = row[:len(expected_cols)]
             clean_rows.append(row)
-            
-        # 🔥 不管 Sheet 標題寫什麼，我們強制使用 expected_cols
-        # 這能解決 InvalidIndexError (重複標題) 的問題
         df = pd.DataFrame(clean_rows, columns=expected_cols)
-        
     else:
-        # 只有標題或全空
         df = pd.DataFrame(columns=expected_cols)
-
 except Exception as e:
-    # 讀取失敗時，回傳空表
     st.error(f"讀取錯誤 (已重置表格結構): {e}")
     df = pd.DataFrame(columns=expected_cols)
 
@@ -167,10 +194,42 @@ st.markdown("---")
 st.subheader("➕ 新增書籍")
 
 with st.container(border=True):
-    # 第一列
+    # 🔥 新增：AI 拍照區
+    with st.expander("📸 懶人模式：拍照/上傳辨識 (點此展開)", expanded=False):
+        if has_ai:
+            cam_col, up_col = st.columns(2)
+            with cam_col:
+                img_file = st.camera_input("直接拍照")
+            with up_col:
+                uploaded_file = st.file_uploader("或上傳圖片 (截圖/照片)", type=['jpg', 'png', 'jpeg'])
+            
+            target_img = img_file if img_file else uploaded_file
+            
+            if target_img:
+                if st.button("✨ 開始 AI 辨識"):
+                    with st.spinner("AI 正在看這本書..."):
+                        image = Image.open(target_img)
+                        result = analyze_image(image)
+                        if result:
+                            # 填入 Session State
+                            st.session_state.form_title = result.get("書名", "")
+                            st.session_state.form_publisher = result.get("出版社", "")
+                            try:
+                                p_str = str(result.get("定價", "0")).replace("$", "").replace(",", "")
+                                st.session_state.form_price = int(float(p_str))
+                            except:
+                                st.session_state.form_price = 0
+                            
+                            st.success("辨識成功！請往下滑檢查資料 👇")
+                            time.sleep(1)
+                            st.rerun()
+        else:
+            st.warning("⚠️ 未設定 Gemini API Key，請檢查 secrets.json")
+
+    # 手動填寫區 (value 綁定 session_state)
     c1, c2 = st.columns([3, 1])
     with c1:
-        new_title = st.text_input("📘 書名 (必填)", key="in_title")
+        new_title = st.text_input("📘 書名 (必填)", value=st.session_state.form_title, key="in_title")
     with c2:
         st.write("") 
         st.write("") 
@@ -182,23 +241,20 @@ with st.container(border=True):
         else:
             st.caption("輸入書名後出現查價鈕")
 
-    # 第二列
     c3, c4, c5, c6 = st.columns(4)
-    with c3: new_publisher = st.text_input("🏢 出版社", key="in_pub")
-    with c4: new_price = st.number_input("💰 定價", min_value=0, step=10, key="in_price")
+    with c3: new_publisher = st.text_input("🏢 出版社", value=st.session_state.form_publisher, key="in_pub")
+    with c4: new_price = st.number_input("💰 定價", min_value=0, step=10, value=st.session_state.form_price, key="in_price")
     with c5: new_discount = st.selectbox("📉 折扣", options=[1.0, 0.79, 0.85, 0.9, 0.75, 0.66], index=1, format_func=lambda x: f"{int(x*100)}折" if x < 1 else "不打折")
     with c6: 
         calc_final = int(new_price * new_discount)
         new_final_price = st.number_input("🏷️ 折扣後價格", value=calc_final, step=1)
         
-    # 第三列
     c7, c8 = st.columns([3, 1])
     with c7: new_note = st.text_input("📝 備註 (選填)", key="in_note")
     with c8:
         st.write("")
         if st.button("➕ 加入清單", type="primary", use_container_width=True):
             if new_title:
-                # 建立新的一行
                 new_row = pd.DataFrame([{
                     "書名": new_title,
                     "出版社": new_publisher,
@@ -209,12 +265,14 @@ with st.container(border=True):
                     "備註": new_note
                 }])
                 
-                # 🔥 使用 concat 前，確保 df 和 new_row 的 columns 完全一致
-                # 因為我們上面強制指定了 df 的 columns，這裡一定會對上
                 df = pd.concat([df, new_row], ignore_index=True)
                 
                 if save_data_overwrite(sheet, df, st.session_state.user_pin):
                     st.toast(f"✅ 已加入：{new_title}")
+                    # 清空暫存
+                    st.session_state.form_title = ""
+                    st.session_state.form_publisher = ""
+                    st.session_state.form_price = 0
                     time.sleep(1)
                     st.rerun()
             else:
@@ -270,4 +328,4 @@ else:
             st.rerun()
 
 st.write("")
-st.caption("💡 提示：輸入書名後，點擊「查博客來」可快速看價格。下方表格可直接修改內容，記得按儲存。")
+st.caption("💡 提示：點擊「📸 懶人模式」可使用 AI 拍照自動填寫。")
