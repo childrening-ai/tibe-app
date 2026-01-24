@@ -78,13 +78,10 @@ def save_data_overwrite(sheet, df, pin_code):
         st.error(f"儲存失敗: {e}")
         return False
 
-# --- 🔥 強力 AI 解析函式 (鎖定 gemini-2.0-flash) ---
+# --- 🔥 強力 AI 解析函式 ---
 def analyze_image_robust(image):
     try:
-        # 🔥 這裡修正為您指定的正確名稱
         model_name = 'gemini-2.0-flash'
-        
-        # 建立模型
         model = genai.GenerativeModel(model_name)
 
         prompt = """
@@ -105,18 +102,12 @@ def analyze_image_robust(image):
            - 只回傳純數字 (Integer)。
         """
         
-        # 設定較高的 token 限制與隨機性歸零 (讓回答更穩定)
-        generation_config = genai.types.GenerationConfig(
-            temperature=0.0
-        )
-
+        generation_config = genai.types.GenerationConfig(temperature=0.0)
         response = model.generate_content([prompt, image], generation_config=generation_config)
         raw_text = response.text
         
-        # 存原始資料供 Debug
         st.session_state.debug_ai_raw = raw_text
 
-        # 強力清洗：抓取 {...} 區塊
         match = re.search(r'\{.*\}', raw_text, re.DOTALL)
         if match:
             json_str = match.group(0)
@@ -130,10 +121,7 @@ def analyze_image_robust(image):
 
 # --- 主程式 ---
 
-# 初始化 Session State
-if "form_title" not in st.session_state: st.session_state.form_title = ""
-if "form_publisher" not in st.session_state: st.session_state.form_publisher = ""
-if "form_price" not in st.session_state: st.session_state.form_price = 0
+# 這裡不再需要 form_title 這種中間人變數了，我們直接操作 Widget Key
 if "debug_ai_raw" not in st.session_state: st.session_state.debug_ai_raw = ""
 
 st.sidebar.title("🔐 用戶登入")
@@ -167,7 +155,7 @@ st.sidebar.success(f"Hi, {st.session_state.user_id}")
 st.session_state.budget = st.sidebar.number_input("💰 總預算設定", value=st.session_state.budget, step=500)
 if st.sidebar.button("登出"):
     st.session_state.is_logged_in = False
-    st.session_state.user_id = ""  # <--- 把它加回來，徹底遺忘使用者
+    st.session_state.user_id = "" # 徹底清除記憶
     st.rerun()
 
 ss = connect_to_spreadsheet()
@@ -218,60 +206,67 @@ with st.container(border=True):
             if uploaded_file:
                 st.image(uploaded_file, caption="預覽圖片", width=200)
                 if st.button("✨ 開始 AI 辨識 (Gemini 2.0)", type="primary"):
-                    with st.spinner("AI (2.0-Flash) 分析中..."):
+                    with st.spinner("AI 分析中..."):
                         image = Image.open(uploaded_file)
                         result = analyze_image_robust(image)
                         
-                        # 🔥 寬容的欄位讀取邏輯 (只要 JSON 有東西就抓)
                         if result:
-                            # 1. 抓取書名 (容錯: Title, Book Name...)
+                            # --- 🔥 關鍵修正區：直接綁架 Widget Key ---
+                            # 我們不更新 form_title，而是直接更新 "in_title" 這些 Key
+                            
+                            # 1. 書名
                             t_val = result.get("書名") or result.get("書籍名稱") or result.get("Title") or ""
-                            st.session_state.form_title = str(t_val)
+                            st.session_state["in_title"] = str(t_val)
 
-                            # 2. 抓取出版社 (容錯: Publisher...)
+                            # 2. 出版社
                             p_val = result.get("出版社") or result.get("Publisher") or ""
-                            st.session_state.form_publisher = str(p_val)
+                            st.session_state["in_pub"] = str(p_val)
 
-                            # 3. 抓取定價 (容錯: Price, 定價...)
+                            # 3. 定價
                             price_raw = result.get("定價") or result.get("Price") or 0
                             try:
-                                # 把 "$1,200" 或 "NT$300" 這種資料洗成純數字
                                 if isinstance(price_raw, str):
                                     clean_p = re.sub(r'[^\d]', '', price_raw)
-                                    st.session_state.form_price = int(float(clean_p)) if clean_p else 0
+                                    final_p = int(float(clean_p)) if clean_p else 0
                                 else:
-                                    st.session_state.form_price = int(price_raw)
+                                    final_p = int(price_raw)
                             except:
-                                st.session_state.form_price = 0
+                                final_p = 0
+                            
+                            st.session_state["in_price"] = final_p
                             
                             st.success(f"✅ 辨識成功！")
-                            time.sleep(0.5) 
-                            st.rerun()    # 🔥 強制重整，讓下方輸入框吃到新數值
+                            time.sleep(0.5)
+                            st.rerun() # 重整後，下方的 text_input 會發現 key 已經有值了，就會顯示出來
                         else:
                             st.error("⚠️ 辨識失敗，無法解析資料。")
             
             if st.session_state.debug_ai_raw:
-                with st.expander("🕵️‍♂️ Debug 視窗：AI 回傳原始內容", expanded=False):
+                with st.expander("🕵️‍♂️ Debug 視窗", expanded=False):
                     st.code(st.session_state.debug_ai_raw)
         else:
             st.warning("⚠️ 請設定 Gemini API Key")
 
-    # 表單區 (value 綁定 session_state)
+    # 表單區
+    # 注意：這裡不需要再寫 value=... 了，因為我們是用 Key 直接控制
+    # 只要 session_state 裡有 "in_title"，它就會自動顯示
     c1, c2 = st.columns([3, 1])
     with c1:
-        new_title = st.text_input("📘 書名 (必填)", value=st.session_state.form_title, key="in_title")
+        new_title = st.text_input("📘 書名 (必填)", key="in_title")
     with c2:
         st.write("") 
         st.write("") 
-        if new_title:
-            st.markdown(f'''<a href="https://search.books.com.tw/search/query/key/{new_title}" target="_blank">
+        # 為了即時顯示按鈕，我們判斷當下的 session_state
+        current_title = st.session_state.get("in_title", "")
+        if current_title:
+            st.markdown(f'''<a href="https://search.books.com.tw/search/query/key/{current_title}" target="_blank">
             <button style="width:100%; padding: 0.5rem; background-color: #f0f2f6; border: 1px solid #ccc; border-radius: 5px; cursor: pointer;">
             🔍 查博客來
             </button></a>''', unsafe_allow_html=True)
 
     c3, c4, c5, c6 = st.columns(4)
-    with c3: new_publisher = st.text_input("🏢 出版社", value=st.session_state.form_publisher, key="in_pub")
-    with c4: new_price = st.number_input("💰 定價", min_value=0, step=10, value=st.session_state.form_price, key="in_price")
+    with c3: new_publisher = st.text_input("🏢 出版社", key="in_pub")
+    with c4: new_price = st.number_input("💰 定價", min_value=0, step=10, key="in_price")
     with c5: new_discount = st.selectbox("📉 折扣", options=[1.0, 0.79, 0.85, 0.9, 0.75, 0.66], index=1, format_func=lambda x: f"{int(x*100)}折" if x < 1 else "不打折")
     with c6: 
         calc_final = int(new_price * new_discount)
@@ -282,23 +277,33 @@ with st.container(border=True):
     with c8:
         st.write("")
         if st.button("➕ 加入清單", type="primary", use_container_width=True):
-            if new_title:
+            # 取值也要從 key 裡面取
+            val_title = st.session_state.get("in_title", "")
+            val_pub = st.session_state.get("in_pub", "")
+            val_price = st.session_state.get("in_price", 0)
+            val_note = st.session_state.get("in_note", "")
+
+            if val_title:
                 new_row = pd.DataFrame([{
-                    "書名": new_title,
-                    "出版社": new_publisher,
-                    "定價": new_price,
+                    "書名": val_title,
+                    "出版社": val_pub,
+                    "定價": val_price,
                     "折扣": new_discount,
                     "折扣價": new_final_price,
                     "狀態": "待購",
-                    "備註": new_note
+                    "備註": val_note
                 }])
                 df = pd.concat([df, new_row], ignore_index=True)
                 if save_data_overwrite(sheet, df, st.session_state.user_pin):
-                    st.toast(f"✅ 已加入：{new_title}")
-                    st.session_state.form_title = ""
-                    st.session_state.form_publisher = ""
-                    st.session_state.form_price = 0
-                    time.sleep(1)
+                    st.toast(f"✅ 已加入：{val_title}")
+                    
+                    # 清空輸入框：直接把 Key 設回空值
+                    st.session_state["in_title"] = ""
+                    st.session_state["in_pub"] = ""
+                    st.session_state["in_price"] = 0
+                    st.session_state["in_note"] = ""
+                    
+                    time.sleep(0.5)
                     st.rerun()
             else:
                 st.error("❌ 請至少輸入書名")
