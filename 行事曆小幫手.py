@@ -637,7 +637,7 @@ if st.session_state.save_success_msg:
 
 # 直接放儲存按鈕，不分欄了，或者用空白欄位推到右邊
 _, c_save = st.columns([0.7, 0.3]) # 左邊留白
-with c_cal_save:
+with c_save:
     if st.session_state.is_guest:
         st.button("💾 儲存 (訪客無法使用)", disabled=True, use_container_width=True)
     else:
