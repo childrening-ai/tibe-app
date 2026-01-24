@@ -92,7 +92,7 @@ def analyze_image_robust(image):
     # 2. 設定 AI 模型 (先用最穩的 1.5-flash，確認能跑再說)
     try:
         # 暫時改回 1.5-flash，因為 2.0-flash-exp 很容易報錯 404
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.0-flash')
         st.text("🤖 步驟 3: AI 模型 (1.5-flash) 初始化成功")
     except Exception as e:
         st.error(f"❌ 錯誤：模型初始化失敗。原因：{e}")
