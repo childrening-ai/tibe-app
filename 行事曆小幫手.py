@@ -199,50 +199,43 @@ st.markdown("""
             padding-bottom: 5px !important;
         }
 
-        /* --- 11. 日曆按鈕優化 (終極強制分行版) --- */
+        /* --- 11. 日曆按鈕優化 (精緻縮小版：解決手機擁擠) --- */
         
-        /* A. 去除點擊後的黑色特效 (維持不變) */
+        /* A. 縮小按鈕容器間距 */
+        .fc-header-toolbar {
+            gap: 4px !important; /* 區塊之間的空隙縮到最小 */
+            padding: 0 !important;
+            margin-bottom: 15px !important;
+        }
+
+        /* B. 縮小標題字體 (中間的日期) */
+        .fc-toolbar-title {
+            font-size: 1.1rem !important; /* 改小一點 (原本約 1.5rem) */
+            font-weight: 700 !important;
+            margin: 0 4px !important; /* 減少左右推擠 */
+        }
+
+        /* C. 縮小按鈕本體 (上一頁、週、日...) */
+        .fc-button {
+            padding: 0px 8px !important; /* 讓按鈕變瘦 (原本很寬) */
+            font-size: 0.85rem !important; /* 字級縮小 */
+            height: 32px !important; /* 限制高度 */
+            line-height: 30px !important; /* 確保文字垂直置中 */
+            border-radius: 6px !important;
+        }
+
+        /* D. 縮小箭頭圖示 (< >) */
+        .fc-icon {
+            font-size: 1rem !important; /* 箭頭也縮小 */
+        }
+
+        /* E. 去除點擊後的黑色特效 (維持珊瑚色) */
         .fc-button-active, .fc-button:active, .fc-button:focus {
             background-color: #FF8C69 !important;
             border-color: #FF8C69 !important;
             color: white !important;
             box-shadow: none !important;
             opacity: 1 !important;
-        }
-        
-        /* B. 手機版強制分行 (加強版) */
-        /* 將觸發寬度拉大到 850px，確保所有手機都會生效 */
-        @media only screen and (max-width: 850px) {
-            
-            /* 1. 強制整個工具列變成垂直排列 */
-            .fc-header-toolbar {
-                display: flex !important;
-                flex-direction: column !important;
-                align-items: center !important;
-                gap: 12px !important; /* 上下間距 */
-                height: auto !important;
-                margin-bottom: 20px !important;
-            }
-            
-            /* 2. 強制左、中、右三個區塊都佔滿一行並置中 */
-            .fc-toolbar-chunk {
-                display: flex !important;
-                width: 100% !important; /* 強制佔滿寬度 */
-                justify-content: center !important; /* 按鈕置中 */
-                margin: 2px 0 !important;
-            }
-            
-            /* 3. 如果是中間的標題，字稍微大一點 */
-            .fc-toolbar-title {
-                font-size: 1.5rem !important;
-                margin: 5px 0 !important;
-            }
-            
-            /* 4. 微調按鈕大小，讓它在分行後更好按 */
-            .fc-button {
-                padding: 0.4rem 0.8rem !important;
-                font-size: 0.9rem !important;
-            }
         }
 
     </style>
