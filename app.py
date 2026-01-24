@@ -1,4 +1,12 @@
 import streamlit as st
+# 加入這段設定
+st.set_page_config(
+    page_title="2026 書展排程神器",  # 瀏覽器分頁標題
+    page_icon="📅",            # 瀏覽器分頁圖示
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
@@ -171,6 +179,7 @@ st.markdown("""
         #MainMenu {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
+
 # ==========================================
 # ⚙️ 設定區
 # ==========================================
