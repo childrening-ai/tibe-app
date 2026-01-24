@@ -6,7 +6,7 @@ import datetime
 import time
 import re
 import urllib3
-# 🔥 新增：AI 相關套件
+import json
 import google.generativeai as genai
 from PIL import Image
 
@@ -17,7 +17,7 @@ st.set_page_config(page_title="書展採購清單", page_icon="📚", layout="wi
 SHEET_NAME = "2026國際書展採購清單"
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- 🔥 新增：初始化 Gemini AI ---
+# --- 初始化 Gemini AI ---
 def configure_genai():
     try:
         api_key = st.secrets.get("gemini_api_key")
@@ -28,7 +28,7 @@ def configure_genai():
     except:
         return False
 
-# --- 2. 連線功能 (穩定版) ---
+# --- 連線功能 ---
 def connect_to_spreadsheet():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     try:
@@ -45,11 +45,10 @@ def connect_to_spreadsheet():
     except Exception as e:
         return None
 
-# --- 3. 分頁與權限管理 ---
+# --- 分頁與權限 ---
 def get_user_sheet_with_auth(spreadsheet, user_id, pin_code):
     safe_id = re.sub(r'[^a-zA-Z0-9_\u4e00-\u9fa5]', '', str(user_id))
     if not safe_id: return None, "ID 無效"
-    
     try:
         sheet = spreadsheet.worksheet(safe_id)
         saved_pin = sheet.acell('Z1').value
@@ -66,7 +65,7 @@ def get_user_sheet_with_auth(spreadsheet, user_id, pin_code):
         except Exception as e:
             return None, f"建立失敗: {e}"
 
-# --- 4. 資料儲存 (全表覆寫模式) ---
+# --- 儲存資料 ---
 def save_data_overwrite(sheet, df, pin_code):
     try:
         df = df.fillna("")
@@ -79,45 +78,70 @@ def save_data_overwrite(sheet, df, pin_code):
         st.error(f"儲存失敗: {e}")
         return False
 
-# --- 🔥 新增：AI 辨識函式 ---
+# --- 🔥 強力 AI 解析函式 (針對網頁優化) ---
 def analyze_image(image):
     try:
         model = genai.GenerativeModel('gemini-2.0-flash')
+
+        # 🔥 這裡根據您的建議修改了 Prompt
         prompt = """
-        請分析這張圖片（書本封面、海報或網頁截圖），提取以下資訊。
-        請直接回傳 JSON 格式，不要有Markdown標記，欄位如下：
+        你是一個精通書籍資訊的 AI 助理。請分析這張圖片（書本封面、海報或網頁截圖）。
+        請嚴格遵守以下 JSON 格式回傳，不要包含任何 Markdown 標記：
         {
             "書名": "書籍名稱",
-            "出版社": "出版社名稱(若無則留空)",
-            "定價": "純數字(若無則填0)"
+            "出版社": "出版社名稱",
+            "定價": 0
         }
+
+        請依照以下優先順序提取資訊（特別是針對「博客來」等書籍網頁）：
+        
+        1. 【書名】：通常是畫面中字體最大、最顯眼的標題文字。
+        
+        2. 【出版社】：
+           - 請尋找「出版社：」或「出版社」這幾個關鍵字。
+           - 抓取緊接在這些關鍵字後面的名稱。
+           
+        3. 【定價】(非常重要)：
+           - 請尋找「定價：」或「定價」這幾個關鍵字後面的數字。
+           - ⚠️ 重要規則：網頁上的定價數字常會有「刪除線」（橫槓），請忽略刪除線，依然讀取該數字。
+           - ⚠️ 排除規則：嚴格禁止讀取「優惠價」、「會員價」、「折」或紅色的大數字。那些是打折後的價格，我要的是原價。
+           - 格式：只回傳純數字 (Integer)，不要有 $ 符號。
+
+        如果真的找不到定價，請填 0。
         """
+        
         response = model.generate_content([prompt, image])
-        clean_text = response.text.replace("```json", "").replace("```", "").strip()
-        import json
-        return json.loads(clean_text)
+        raw_text = response.text
+        
+        st.session_state.debug_ai_raw = raw_text
+
+        # 強力清洗：抓取 {...} 區塊
+        match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+        if match:
+            json_str = match.group(0)
+            return json.loads(json_str)
+        else:
+            return {"error": "No JSON found", "raw": raw_text}
+
     except Exception as e:
-        st.error(f"AI 辨識失敗: {e}")
+        st.session_state.debug_ai_raw = f"Error: {str(e)}"
         return None
 
-# --- 主程式介面 ---
+# --- 主程式 ---
 
-# 初始化 Session State (用於 AI 自動填表)
 if "form_title" not in st.session_state: st.session_state.form_title = ""
 if "form_publisher" not in st.session_state: st.session_state.form_publisher = ""
 if "form_price" not in st.session_state: st.session_state.form_price = 0
+if "debug_ai_raw" not in st.session_state: st.session_state.debug_ai_raw = ""
 
-# [側邊欄] 登入系統
 st.sidebar.title("🔐 用戶登入")
 if "user_id" not in st.session_state: st.session_state.user_id = ""
 if "user_pin" not in st.session_state: st.session_state.user_pin = ""
 if "is_logged_in" not in st.session_state: st.session_state.is_logged_in = False
 if "budget" not in st.session_state: st.session_state.budget = 3000
 
-# 設定 Gemini
 has_ai = configure_genai()
 
-# 未登入介面
 if not st.session_state.is_logged_in:
     with st.sidebar.form("login_form"):
         input_id = st.text_input("👤 暱稱", placeholder="例如: Kevin")
@@ -132,13 +156,11 @@ if not st.session_state.is_logged_in:
                         st.session_state.user_pin = input_pin
                         st.session_state.is_logged_in = True
                         st.rerun()
-                    else:
-                        st.sidebar.error(msg)
+                    else: st.sidebar.error(msg)
     st.title("📚 2026 書展採購清單")
     st.info("👈 請先從左側登入")
     st.stop()
 
-# 已登入介面
 st.sidebar.success(f"Hi, {st.session_state.user_id}")
 st.session_state.budget = st.sidebar.number_input("💰 總預算設定", value=st.session_state.budget, step=500)
 if st.sidebar.button("登出"):
@@ -146,87 +168,82 @@ if st.sidebar.button("登出"):
     st.session_state.user_id = ""
     st.rerun()
 
-# 建立連線
 ss = connect_to_spreadsheet()
 if not ss: st.error("連線失敗"); st.stop()
 sheet, _ = get_user_sheet_with_auth(ss, st.session_state.user_id, st.session_state.user_pin)
 
 st.title(f"🛒 {st.session_state.user_id} 的採購清單")
 
-# --- 資料讀取與處理 ---
+# 讀取資料
 expected_cols = ["書名", "出版社", "定價", "折扣", "折扣價", "狀態", "備註"]
-
 try:
     data = sheet.get_all_values()
     if len(data) > 1:
         raw_rows = data[1:]
         clean_rows = []
         for row in raw_rows:
-            if len(row) < len(expected_cols):
-                row = row + [""] * (len(expected_cols) - len(row))
+            if len(row) < len(expected_cols): row = row + [""] * (len(expected_cols) - len(row))
             row = row[:len(expected_cols)]
             clean_rows.append(row)
         df = pd.DataFrame(clean_rows, columns=expected_cols)
     else:
         df = pd.DataFrame(columns=expected_cols)
 except Exception as e:
-    st.error(f"讀取錯誤 (已重置表格結構): {e}")
     df = pd.DataFrame(columns=expected_cols)
 
-# 數值運算預處理
 df['定價'] = pd.to_numeric(df['定價'], errors='coerce').fillna(0)
 df['折扣價'] = pd.to_numeric(df['折扣價'], errors='coerce').fillna(0)
-
-# 預算計算
 calc_price = df['折扣價'].where(df['折扣價'] > 0, df['定價'])
 total_spent = calc_price[df['狀態'].isin(['待購', '已購'])].sum()
 remain = st.session_state.budget - total_spent
 
-# --- 頂部儀表板 ---
 col1, col2, col3 = st.columns(3)
 col1.metric("📚 書籍數量", f"{len(df)} 本")
 col2.metric("💸 預計花費", f"${int(total_spent)}")
 col3.metric("💰 剩餘預算", f"${int(remain)}", delta_color="normal" if remain >= 0 else "inverse")
 
 st.markdown("---")
-
-# --- 區域 A: 新增書籍 ---
 st.subheader("➕ 新增書籍")
 
 with st.container(border=True):
-    # 🔥 新增：AI 拍照區
-    with st.expander("📸 懶人模式：拍照/上傳辨識 (點此展開)", expanded=False):
+    # AI 區塊
+    with st.expander("📸 AI 智慧辨識 (點此展開)", expanded=True):
         if has_ai:
-            cam_col, up_col = st.columns(2)
-            with cam_col:
-                img_file = st.camera_input("直接拍照")
-            with up_col:
-                uploaded_file = st.file_uploader("或上傳圖片 (截圖/照片)", type=['jpg', 'png', 'jpeg'])
+            st.info("💡 提示：手機拍攝書籍封面、或直接拍電腦螢幕上的博客來網頁皆可。")
             
-            target_img = img_file if img_file else uploaded_file
+            uploaded_file = st.file_uploader("📂 點此開啟相機或圖庫", type=['jpg', 'png', 'jpeg'])
             
-            if target_img:
-                if st.button("✨ 開始 AI 辨識"):
-                    with st.spinner("AI 正在看這本書..."):
-                        image = Image.open(target_img)
-                        result = analyze_image(image)
-                        if result:
-                            # 填入 Session State
+            if uploaded_file:
+                st.image(uploaded_file, caption="預覽圖片", width=200)
+                if st.button("✨ 開始 AI 辨識", type="primary"):
+                    with st.spinner("AI 分析中..."):
+                        image = Image.open(uploaded_file)
+                        result = analyze_image_robust(image)
+                        
+                        if result and "書名" in result:
                             st.session_state.form_title = result.get("書名", "")
                             st.session_state.form_publisher = result.get("出版社", "")
                             try:
-                                p_str = str(result.get("定價", "0")).replace("$", "").replace(",", "")
-                                st.session_state.form_price = int(float(p_str))
+                                p_val = result.get("定價", 0)
+                                if isinstance(p_val, str):
+                                    p_val = re.sub(r'[^\d]', '', p_val)
+                                st.session_state.form_price = int(float(p_val)) if p_val else 0
                             except:
                                 st.session_state.form_price = 0
                             
-                            st.success("辨識成功！請往下滑檢查資料 👇")
+                            st.success("✅ 辨識完成！")
                             time.sleep(1)
                             st.rerun()
+                        else:
+                            st.error("⚠️ 辨識失敗，請參考下方除錯資訊")
+            
+            if st.session_state.debug_ai_raw:
+                with st.expander("🕵️‍♂️ Debug 視窗：AI 回傳原始內容", expanded=False):
+                    st.code(st.session_state.debug_ai_raw)
         else:
-            st.warning("⚠️ 未設定 Gemini API Key，請檢查 secrets.json")
+            st.warning("⚠️ 請設定 Gemini API Key")
 
-    # 手動填寫區 (value 綁定 session_state)
+    # 表單區
     c1, c2 = st.columns([3, 1])
     with c1:
         new_title = st.text_input("📘 書名 (必填)", value=st.session_state.form_title, key="in_title")
@@ -238,8 +255,6 @@ with st.container(border=True):
             <button style="width:100%; padding: 0.5rem; background-color: #f0f2f6; border: 1px solid #ccc; border-radius: 5px; cursor: pointer;">
             🔍 查博客來
             </button></a>''', unsafe_allow_html=True)
-        else:
-            st.caption("輸入書名後出現查價鈕")
 
     c3, c4, c5, c6 = st.columns(4)
     with c3: new_publisher = st.text_input("🏢 出版社", value=st.session_state.form_publisher, key="in_pub")
@@ -264,12 +279,9 @@ with st.container(border=True):
                     "狀態": "待購",
                     "備註": new_note
                 }])
-                
                 df = pd.concat([df, new_row], ignore_index=True)
-                
                 if save_data_overwrite(sheet, df, st.session_state.user_pin):
                     st.toast(f"✅ 已加入：{new_title}")
-                    # 清空暫存
                     st.session_state.form_title = ""
                     st.session_state.form_publisher = ""
                     st.session_state.form_price = 0
@@ -279,53 +291,25 @@ with st.container(border=True):
                 st.error("❌ 請至少輸入書名")
 
 st.markdown("---")
-
-# --- 區域 B: 清單管理 ---
 st.subheader("📋 管理清單")
 
 if df.empty:
-    st.info("目前清單是空的，請在上方新增書籍。")
+    st.info("目前清單是空的。")
 else:
     df_display = df.copy()
     df_display.insert(0, "🗑️ 刪除", False)
-
-    edited_df = st.data_editor(
-        df_display,
-        use_container_width=True,
-        num_rows="fixed",
-        key="main_editor",
-        column_config={
-            "🗑️ 刪除": st.column_config.CheckboxColumn("刪除?", width="small"),
-            "定價": st.column_config.NumberColumn("定價", format="$%d"),
-            "折扣": st.column_config.NumberColumn("折扣", format="%.2f"),
-            "折扣價": st.column_config.NumberColumn("折扣價", format="$%d"),
-            "狀態": st.column_config.SelectboxColumn("狀態", options=["待購", "已購", "猶豫中", "放棄"], width="medium"),
-            "備註": st.column_config.TextColumn("備註", width="large"),
-        }
-    )
-
-    btn_col1, btn_col2 = st.columns([1, 1])
+    edited_df = st.data_editor(df_display, use_container_width=True, num_rows="fixed", key="main_editor", column_config={"🗑️ 刪除": st.column_config.CheckboxColumn("刪除?", width="small")})
     
+    btn_col1, btn_col2 = st.columns([1, 1])
     with btn_col1:
-        rows_to_delete = edited_df[edited_df["🗑️ 刪除"] == True]
-        delete_count = len(rows_to_delete)
-        if delete_count > 0:
-            if st.button(f"🗑️ 刪除選取的 {delete_count} 本書", type="secondary", use_container_width=True):
-                final_df = edited_df[edited_df["🗑️ 刪除"] == False].drop(columns=["🗑️ 刪除"])
-                save_data_overwrite(sheet, final_df, st.session_state.user_pin)
-                st.success("刪除成功！")
-                time.sleep(1)
-                st.rerun()
-        else:
-            st.button("🗑️ 刪除 (請先勾選)", disabled=True, use_container_width=True)
-
+        rows = edited_df[edited_df["🗑️ 刪除"] == True]
+        if len(rows) > 0:
+            if st.button(f"🗑️ 刪除選取的 {len(rows)} 本書", type="secondary"):
+                final = edited_df[edited_df["🗑️ 刪除"] == False].drop(columns=["🗑️ 刪除"])
+                save_data_overwrite(sheet, final, st.session_state.user_pin)
+                st.success("刪除成功！"); st.rerun()
     with btn_col2:
-        clean_edited = edited_df.drop(columns=["🗑️ 刪除"])
-        if st.button("💾 儲存表格修改", type="primary", use_container_width=True):
-            save_data_overwrite(sheet, clean_edited, st.session_state.user_pin)
-            st.success("✅ 修改已同步！")
-            time.sleep(1)
-            st.rerun()
-
-st.write("")
-st.caption("💡 提示：點擊「📸 懶人模式」可使用 AI 拍照自動填寫。")
+        if st.button("💾 儲存修改", type="primary"):
+            final = edited_df.drop(columns=["🗑️ 刪除"])
+            save_data_overwrite(sheet, final, st.session_state.user_pin)
+            st.success("✅ 已同步！"); st.rerun()
