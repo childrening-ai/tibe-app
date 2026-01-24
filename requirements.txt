@@ -42,3 +42,5 @@ tzdata==2025.3
 urllib3==2.6.3
 gspread
 oauth2client
+google-generativeai
+Pillow
