@@ -19,76 +19,142 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🎨 UI 美化工程 (CSS 注入區)
+# 🎨 UI 美化工程 (親子柔和風格版)
 # ==========================================
 st.markdown("""
     <style>
-        /* 1. 調整手機上的版面間距 */
+        /* --- 1. 全域配色與字體設定 --- */
+        /* 主背景設為白色 */
+        .stApp {
+            background-color: #FFFFFF;
+            color: #4A4A4A; /* 文字改為深暖灰 */
+        }
+        
+        /* 調整手機上的版面間距 (避開箭頭) */
         .block-container {
-            padding-top: 1.5rem !important; /* 改成 1.5rem，避開左上角的箭頭 */
+            padding-top: 2rem !important;
             padding-bottom: 5rem !important;
         }
-         /* 調整手機上的標題大小 */
-        h1 { font-size: 1.6rem !important; }
+        h1 { font-size: 1.6rem !important; color: #4A4A4A !important; }
+        h2, h3 { color: #5C5C5C !important; }
         footer {visibility: hidden;}
 
-        /* 2. 優化分頁籤 (Tabs) - 變成反白區塊 */
-        /* 分頁容器背景 */
+        /* --- 2. 側邊欄設計 (溫暖米色) --- */
+        [data-testid="stSidebar"] {
+            background-color: #FFF9F0; /* 暖米色背景 */
+            border-right: 1px solid #EFE6D8; /* 柔和邊框 */
+        }
+        /* 側邊欄內的文字 */
+        [data-testid="stSidebar"] .stMarkdown, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] p {
+            color: #5C4B45 !important; /* 深咖啡色文字 */
+        }
+
+        /* --- 3. 側邊欄收合箭頭 (可愛圓形設計) --- */
+        [data-testid="stSidebarCollapsedControl"] {
+            background-color: #FF8C69 !important; /* 珊瑚粉底色 */
+            color: white !important; /* 白色箭頭 */
+            border-radius: 50%; /* 圓形 */
+            border: 2px solid white; /* 白色描邊，增加層次 */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1); /* 微微陰影 */
+            width: 2.5rem;
+            height: 2.5rem;
+            /* 調整位置，讓它看起來像個小標籤 */
+            top: 1rem;
+            left: 1rem;
+        }
+        /* 滑鼠移過去的效果 */
+        [data-testid="stSidebarCollapsedControl"]:hover {
+            background-color: #FF7043 !important; /* 稍微深一點 */
+            transform: scale(1.05); /* 微微放大 */
+        }
+
+        /* --- 4. 按鈕優化 (圓潤親切感) --- */
+        /* 一般按鈕 */
+        .stButton > button {
+            border-radius: 20px !important; /* 圓角 */
+            border: 1px solid #FF8C69 !important;
+            color: #FF8C69 !important;
+            background-color: white !important;
+            font-weight: bold;
+        }
+        /* 主要按鈕 (Primary - 如儲存) */
+        .stButton > button[kind="primary"] {
+            background-color: #FF8C69 !important; /* 珊瑚粉 */
+            color: white !important;
+            border: none !important;
+            box-shadow: 0 2px 4px rgba(255, 140, 105, 0.4);
+        }
+        /* 按鈕 hover 效果 */
+        .stButton > button:hover {
+            opacity: 0.9;
+        }
+
+        /* --- 5. 分頁籤 (Tabs) 設計 --- */
+        /* 分頁容器 */
         .stTabs [data-baseweb="tab-list"] {
             gap: 8px;
             background-color: transparent;
             padding: 5px 0px;
-            overflow-x: auto; /* 手機橫滑 */
-            flex-wrap: nowrap; /* 不換行，讓手機可以橫向滑動 */
+            overflow-x: auto;
+            flex-wrap: nowrap;
         }
         /* 未選中的分頁 */
         .stTabs [data-baseweb="tab"] {
-            height: 45px;
+            height: 40px;
             white-space: nowrap;
-            background-color: #f0f2f6;
-            border-radius: 8px;
-            color: #31333F;
-            font-size: 16px;
+            background-color: #F7F7F7; /* 淺灰白 */
+            border-radius: 20px; /* 圓角像膠囊 */
+            color: #7D7D7D;
+            font-size: 15px;
             font-weight: 600;
-            padding: 0px 20px;
-            border: 1px solid #e0e0e0;
-            flex: 0 0 auto; /* 防止縮小 */
+            padding: 0px 15px;
+            border: 1px solid #E0E0E0;
+            flex: 0 0 auto;
         }
         /* 選中的分頁 (反白效果) */
         .stTabs [aria-selected="true"] {
-            background-color: #FF4B4B !important;
+            background-color: #FF8C69 !important; /* 珊瑚粉 */
             color: #FFFFFF !important;
-            border: 1px solid #FF4B4B;
+            border: 1px solid #FF8C69;
+            box-shadow: 0 2px 4px rgba(255, 140, 105, 0.3);
         }
         
-        /* 3. 日曆樣式微調 */
-        /* 縮小日曆標題字級 (原本是 February 3, 2026) */
+        /* --- 6. 日曆樣式微調 --- */
         .fc-toolbar-title {
             font-size: 1.2rem !important;
             font-weight: 700 !important;
+            color: #4A4A4A;
         }
-        /* 調整日曆按鈕大小 */
+        /* 日曆上的按鈕 */
         .fc-button {
+            background-color: #FF8C69 !important;
+            border-color: #FF8C69 !important;
+            border-radius: 8px !important;
             font-size: 0.8rem !important;
-            padding: 0.2rem 0.5rem !important;
         }
 
-        /* 4. 自定義成功提示框樣式 */
+        /* --- 7. 成功提示框 (柔和綠) --- */
         .success-box {
-            background-color: #d4edda;
-            color: #155724;
+            background-color: #E8F5E9; /* 極淺綠 */
+            color: #2E7D32; /* 深綠文字 */
             padding: 15px;
             margin-bottom: 15px;
-            border-radius: 8px;
-            border: 1px solid #c3e6cb;
+            border-radius: 12px;
+            border: 2px solid #C8E6C9; /* 淺綠邊框 */
             text-align: center;
             font-weight: bold;
-            font-size: 1.2rem;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            font-size: 1.1rem;
+        }
+        
+        /* --- 8. 登入框優化 --- */
+        [data-testid="stForm"] {
+            border: 2px solid #FFF0E0;
+            background-color: #FFFCF8;
+            border-radius: 15px;
+            padding: 20px;
         }
     </style>
 """, unsafe_allow_html=True)
-
 # ==========================================
 # ⚙️ 設定區
 # ==========================================
