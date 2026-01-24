@@ -47,21 +47,48 @@ st.markdown("""
             color: #5C4B45 !important;
         }
 
-        /* --- 3. 側邊欄收合箭頭 (重點設計) --- */
-        [data-testid="stSidebarCollapsedControl"] {
+        /* --- 3. 側邊欄控制按鈕 (全時段固定顯示版) --- */
+        
+        /* 同時選取「收合時的箭頭」與「展開時的叉叉」 */
+        [data-testid="stSidebarCollapsedControl"],
+        [data-testid="stSidebarExpandedControl"] {
             background-color: #FF8C69 !important; /* 珊瑚粉圓球 */
             color: white !important;
             border-radius: 50%;
             border: 2px solid #FFFFFF;
             box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
-            width: 3rem;  /* 加大一點讓手指好點 */
-            height: 3rem;
-            top: 1rem;
-            left: 1rem;
+            
+            /* 強制固定大小 */
+            width: 3rem !important;
+            height: 3rem !important;
+            
+            /* 🔥 關鍵：強制固定位置 (Fixed) */
+            position: fixed !important;
+            top: 1rem !important;
+            left: 1rem !important;
+            
+            /* 🔥 關鍵：層級設到最高，確保浮在側邊欄之上 */
+            z-index: 1000002 !important; 
+            
+            /* 確保內容置中 */
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
         }
-        [data-testid="stSidebarCollapsedControl"]:hover {
+
+        /* 滑鼠移過去的效果 */
+        [data-testid="stSidebarCollapsedControl"]:hover,
+        [data-testid="stSidebarExpandedControl"]:hover {
             transform: scale(1.1);
             background-color: #FF7043 !important;
+        }
+        
+        /* 修正展開後的圖示大小 (原本的 X 可能會太小或歪掉) */
+        [data-testid="stSidebarExpandedControl"] svg,
+        [data-testid="stSidebarCollapsedControl"] svg {
+            width: 1.5rem !important;
+            height: 1.5rem !important;
+            stroke-width: 3px !important; /* 讓線條粗一點，比較清楚 */
         }
 
         /* --- 4. 修正深色元件 (針對您的截圖修正) --- */
