@@ -78,74 +78,59 @@ def save_data_overwrite(sheet, df, pin_code):
         st.error(f"儲存失敗: {e}")
         return False
 
-# --- 🔥 強力 AI 解析函式 (安全除錯版) ---
+# --- 🔥 強力 AI 解析函式 (鎖定 gemini-2.0-flash) ---
 def analyze_image_robust(image):
-    st.info("🔄 步驟 1: 進入 AI 分析函式...") # Debug 訊息
-    
-    # 1. 檢查圖片物件
-    if image is None:
-        st.error("❌ 錯誤：圖片物件是空的 (None)")
-        return None
-    
-    st.text(f"📸 步驟 2: 圖片讀取成功，尺寸: {image.size}")
-
-    # 2. 設定 AI 模型 (先用最穩的 1.5-flash，確認能跑再說)
     try:
-        # 暫時改回 1.5-flash，因為 2.0-flash-exp 很容易報錯 404
-        model = genai.GenerativeModel('gemini-2.0-flash')
-        st.text("🤖 步驟 3: AI 模型 (1.5-flash) 初始化成功")
-    except Exception as e:
-        st.error(f"❌ 錯誤：模型初始化失敗。原因：{e}")
-        return None
-
-    # 3. 準備 Prompt
-    prompt = """
-    你是一個精通書籍資訊的 AI 助理。請分析這張圖片。
-    請嚴格遵守以下 JSON 格式回傳，不要包含任何 Markdown 標記：
-    {
-        "書名": "書籍名稱",
-        "出版社": "出版社名稱",
-        "定價": 0
-    }
-    
-    規則：
-    1. 【定價】：請尋找「定價：」後面的數字。
-    2. 忽略刪除線，禁止讀取紅色優惠價。
-    3. 只回傳純數字 (Integer)。
-    """
-
-    # 4. 發送請求 (這是最容易崩潰的地方)
-    try:
-        st.text("📡 步驟 4: 正在發送圖片給 Google...")
-        response = model.generate_content([prompt, image])
-        st.text("✅ 步驟 5: 收到 Google 回傳資料")
+        # 🔥 這裡修正為您指定的正確名稱
+        model_name = 'gemini-2.0-flash'
         
+        # 建立模型
+        model = genai.GenerativeModel(model_name)
+
+        prompt = """
+        你是一個精通書籍資訊的 AI 助理。請分析這張圖片（書本封面、海報或網頁截圖）。
+        請嚴格遵守以下 JSON 格式回傳，不要包含任何 Markdown 標記：
+        {
+            "書名": "書籍名稱",
+            "出版社": "出版社名稱",
+            "定價": 0
+        }
+
+        規則：
+        1. 【書名】：找出畫面中最顯眼的標題。
+        2. 【出版社】：找出出版商名稱 (若找不到可留空)。
+        3. 【定價】：
+           - 尋找「定價」或「價格」關鍵字後的數字。
+           - ⚠️ 重要：忽略刪除線，忽略紅色的優惠價，我要原價。
+           - 只回傳純數字 (Integer)。
+        """
+        
+        # 設定較高的 token 限制與隨機性歸零 (讓回答更穩定)
+        generation_config = genai.types.GenerationConfig(
+            temperature=0.0
+        )
+
+        response = model.generate_content([prompt, image], generation_config=generation_config)
         raw_text = response.text
-        st.session_state.debug_ai_raw = raw_text # 存起來給你看
+        
+        # 存原始資料供 Debug
+        st.session_state.debug_ai_raw = raw_text
 
-    except Exception as e:
-        # 這裡會抓出具體的 API 錯誤 (例如 Key 無效、配額不足)
-        st.error(f"❌ 錯誤：呼叫 API 失敗。原因：{e}")
-        st.session_state.debug_ai_raw = f"API Error: {e}"
-        return None
-
-    # 5. 解析 JSON
-    try:
+        # 強力清洗：抓取 {...} 區塊
         match = re.search(r'\{.*\}', raw_text, re.DOTALL)
         if match:
             json_str = match.group(0)
-            data = json.loads(json_str)
-            st.text("🎉 步驟 6: JSON 解析成功！")
-            return data
+            return json.loads(json_str)
         else:
-            st.warning("⚠️ 警告：AI 有回傳文字，但找不到 JSON 格式。")
-            return {"error": "No JSON", "raw": raw_text}
+            return {"error": "No JSON found", "raw": raw_text}
+
     except Exception as e:
-        st.error(f"❌ 錯誤：JSON 解析失敗。原因：{e}")
+        st.session_state.debug_ai_raw = f"Error: {str(e)}"
         return None
 
 # --- 主程式 ---
 
+# 初始化 Session State
 if "form_title" not in st.session_state: st.session_state.form_title = ""
 if "form_publisher" not in st.session_state: st.session_state.form_publisher = ""
 if "form_price" not in st.session_state: st.session_state.form_price = 0
@@ -182,7 +167,7 @@ st.sidebar.success(f"Hi, {st.session_state.user_id}")
 st.session_state.budget = st.sidebar.number_input("💰 總預算設定", value=st.session_state.budget, step=500)
 if st.sidebar.button("登出"):
     st.session_state.is_logged_in = False
-    st.session_state.user_id = ""
+    st.session_state.user_id = ""  # <--- 把它加回來，徹底遺忘使用者
     st.rerun()
 
 ss = connect_to_spreadsheet()
@@ -228,31 +213,42 @@ with st.container(border=True):
         if has_ai:
             st.info("💡 提示：手機拍攝書籍封面、或直接拍電腦螢幕上的博客來網頁皆可。")
             
-            uploaded_file = st.file_uploader("📂 點此開啟相機或圖庫", type=['jpg', 'png', 'jpeg'])
+            uploaded_file = st.file_uploader("📂 點此開啟相機或圖庫 (推薦)", type=['jpg', 'png', 'jpeg'])
             
             if uploaded_file:
                 st.image(uploaded_file, caption="預覽圖片", width=200)
-                if st.button("✨ 開始 AI 辨識", type="primary"):
-                    with st.spinner("AI 分析中..."):
+                if st.button("✨ 開始 AI 辨識 (Gemini 2.0)", type="primary"):
+                    with st.spinner("AI (2.0-Flash) 分析中..."):
                         image = Image.open(uploaded_file)
                         result = analyze_image_robust(image)
                         
-                        if result and "書名" in result:
-                            st.session_state.form_title = result.get("書名", "")
-                            st.session_state.form_publisher = result.get("出版社", "")
+                        # 🔥 寬容的欄位讀取邏輯 (只要 JSON 有東西就抓)
+                        if result:
+                            # 1. 抓取書名 (容錯: Title, Book Name...)
+                            t_val = result.get("書名") or result.get("書籍名稱") or result.get("Title") or ""
+                            st.session_state.form_title = str(t_val)
+
+                            # 2. 抓取出版社 (容錯: Publisher...)
+                            p_val = result.get("出版社") or result.get("Publisher") or ""
+                            st.session_state.form_publisher = str(p_val)
+
+                            # 3. 抓取定價 (容錯: Price, 定價...)
+                            price_raw = result.get("定價") or result.get("Price") or 0
                             try:
-                                p_val = result.get("定價", 0)
-                                if isinstance(p_val, str):
-                                    p_val = re.sub(r'[^\d]', '', p_val)
-                                st.session_state.form_price = int(float(p_val)) if p_val else 0
+                                # 把 "$1,200" 或 "NT$300" 這種資料洗成純數字
+                                if isinstance(price_raw, str):
+                                    clean_p = re.sub(r'[^\d]', '', price_raw)
+                                    st.session_state.form_price = int(float(clean_p)) if clean_p else 0
+                                else:
+                                    st.session_state.form_price = int(price_raw)
                             except:
                                 st.session_state.form_price = 0
                             
-                            st.success("✅ 辨識完成！")
-                            time.sleep(1)
-                            st.rerun()
+                            st.success(f"✅ 辨識成功！")
+                            time.sleep(0.5) 
+                            st.rerun()    # 🔥 強制重整，讓下方輸入框吃到新數值
                         else:
-                            st.error("⚠️ 辨識失敗，請參考下方除錯資訊")
+                            st.error("⚠️ 辨識失敗，無法解析資料。")
             
             if st.session_state.debug_ai_raw:
                 with st.expander("🕵️‍♂️ Debug 視窗：AI 回傳原始內容", expanded=False):
@@ -260,7 +256,7 @@ with st.container(border=True):
         else:
             st.warning("⚠️ 請設定 Gemini API Key")
 
-    # 表單區
+    # 表單區 (value 綁定 session_state)
     c1, c2 = st.columns([3, 1])
     with c1:
         new_title = st.text_input("📘 書名 (必填)", value=st.session_state.form_title, key="in_title")
