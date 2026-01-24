@@ -151,8 +151,7 @@ def load_user_saved_ids(user_id):
 
 def save_user_schedule_to_cloud(user_id, selected_df):
     """
-    將使用者的行程存回中央資料庫
-    策略：讀取全表 -> 刪除該用戶舊資料 -> 附加新資料 -> 寫回
+    將使用者的行程存回中央資料庫 (自動修復標題版)
     """
     client = get_gspread_client()
     if not client: return False, "連線失敗"
@@ -161,50 +160,69 @@ def save_user_schedule_to_cloud(user_id, selected_df):
         sh = client.open(SHEET_NAME_USERS_DB)
         ws = sh.worksheet(WORKSHEET_USERS_TAB)
         
-        # 1. 抓取目前資料庫所有資料
+        # 1. 定義標準欄位 (這是我們唯一關心的正確順序)
+        TARGET_COLS = ["User_ID", "ID", "日期", "時間", "活動名稱", "地點"]
+        
+        # 2. 抓取目前資料庫所有資料
         existing_data = ws.get_all_values()
         
-        # 2. 準備要寫入的新資料
-        # 定義要存的欄位，對應資料庫結構
-        db_cols = ["ID", "日期", "時間", "活動名稱", "地點"]
-        # DataFrame 欄位對應 (小寫轉大寫或保持一致)
-        save_cols = ["id", "日期", "時間", "活動名稱", "地點"]
+        # 3. 解析舊資料 (自動判斷有沒有標題)
+        df_clean = pd.DataFrame(columns=TARGET_COLS)
         
-        valid_cols = [c for c in save_cols if c in selected_df.columns]
-        new_records_df = selected_df[valid_cols].copy()
-        new_records_df.columns = db_cols # 重命名為 DB 格式
-        new_records_df.insert(0, "User_ID", str(user_id)) # 插入 User_ID 標記
+        if existing_data:
+            # 判斷第一列是否為標題
+            # 如果第一列的第一格是 "User_ID"，代表有標題
+            if str(existing_data[0][0]).strip() == "User_ID":
+                # 有標題：正常讀取 (忽略第一列標題)
+                if len(existing_data) > 1:
+                    df_clean = pd.DataFrame(existing_data[1:], columns=TARGET_COLS)
+            else:
+                # 沒標題 (例如第一列是空白，或是直接就是資料)：
+                # 假設資料順序是正確的 (因為是我們程式寫進去的)，直接當作數據讀取
+                # 先過濾掉全空的列 (避免讀到空白列)
+                valid_data = [row for row in existing_data if any(field.strip() for field in row)]
+                if valid_data:
+                    # 強制指定欄位名稱
+                    df_clean = pd.DataFrame(valid_data, columns=TARGET_COLS)
+
+        # 4. 準備要寫入的新資料
+        new_records_df = pd.DataFrame()
+        new_records_df["User_ID"] = [str(user_id)] * len(selected_df)
         
-        # 3. 處理舊資料
-        if len(existing_data) < 1:
-            # 如果是全空的表，直接寫入標題 + 內容
-            header = ["User_ID"] + db_cols
-            final_data = [header] + new_records_df.values.tolist()
-            ws.update(range_name='A1', values=final_data)
-            return True, "初始化並儲存成功"
-            
-        header = existing_data[0]
-        df_all = pd.DataFrame(existing_data[1:], columns=header)
+        col_mapping = {"id": "ID", "日期": "日期", "時間": "時間", "活動名稱": "活動名稱", "地點": "地點"}
+        for src_col, target_col in col_mapping.items():
+            if src_col in selected_df.columns:
+                new_records_df[target_col] = selected_df[src_col].values
+            else:
+                new_records_df[target_col] = ""
         
-        # 4. 剔除舊資料 (只保留【不是】目前這位使用者的資料)
-        if "User_ID" in df_all.columns:
-            df_keep = df_all[df_all["User_ID"] != str(user_id)]
+        # 確保格式乾淨
+        new_records_df = new_records_df[TARGET_COLS]
+
+        # 5. 剔除該使用者的舊資料 (保留別人的)
+        if not df_clean.empty:
+            # 轉成字串比對，避免型別問題
+            df_keep = df_clean[df_clean["User_ID"].astype(str) != str(user_id)]
         else:
-            df_keep = df_all # 欄位異常，保留全部以防萬一
-            
-        # 5. 合併 (別人的舊資料 + 我的新資料)
+            df_keep = pd.DataFrame(columns=TARGET_COLS)
+
+        # 6. 合併 (別人的舊資料 + 我的新資料)
         df_final = pd.concat([df_keep, new_records_df], ignore_index=True)
+        df_final = df_final.fillna("") # 填補空值
         
-        # 6. 寫回 (清空 -> 寫入)
+        # 7. 寫回 (強制寫入標題 + 資料)
+        # 這樣就能修復原本缺標題的問題
+        final_values = [TARGET_COLS] + df_final.values.tolist()
+        
         ws.clear()
-        ws.update(range_name='A1', values=[header] + df_final.values.tolist())
+        ws.update(range_name='A1', values=final_values)
         
         return True, "儲存成功"
         
     except gspread.WorksheetNotFound:
-        return False, f"找不到分頁 '{WORKSHEET_USERS_TAB}'，請確認您已在檔案中建立此分頁。"
+        return False, f"找不到分頁 '{WORKSHEET_USERS_TAB}'"
     except Exception as e:
-        return False, f"儲存失敗: {e}"
+        return False, f"儲存失敗: {str(e)}"
 
 # --- 時間解析工具 ---
 def parse_datetime_range(date_str, time_str):
