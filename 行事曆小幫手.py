@@ -186,6 +186,12 @@ st.markdown("""
         /* 隱藏不必要的元素 */
         footer {visibility: hidden;}
         #MainMenu {visibility: hidden;}
+  
+        /* --- 9. 勾選框顏色 (強制改成珊瑚色) --- */
+        input[type="checkbox"] {
+            accent-color: #FF8C69 !important; /* 勾選後的背景色 */
+            cursor: pointer;
+        }
     </style>
 """, unsafe_allow_html=True)
 
