@@ -31,7 +31,7 @@ rpds-py
 six
 smmap
 soupsieve
-streamlit
+streamlit>=1.35.0
 streamlit-calendar
 TatSu
 tenacity
