@@ -280,7 +280,7 @@ def get_gspread_client():
         print(f"連線錯誤: {e}")
         return None
 
-# --- 資料讀取 ---
+# --- 資料讀取 (修正 ID 重複問題版) ---
 @st.cache_data(ttl=300)
 def load_master_data():
     client = get_gspread_client()
@@ -308,15 +308,24 @@ def load_master_data():
                     if col not in df.columns: df[col] = "" 
                 
                 df = df.fillna("")
-                df['id'] = df.apply(lambda x: f"{x['日期']}_{x['時間']}_{x['活動名稱']}", axis=1)
+                
+                # 注意：原本在這裡產生 ID 的程式碼已移除
+                
                 all_frames.append(df)
             except Exception as e:
-                print(f"讀取 {ws_name} 失敗: {e}")
                 pass
 
         if not all_frames: return pd.DataFrame(), "無資料"
+        
+        # 合併所有資料
         final_df = pd.concat(all_frames, ignore_index=True)
+        
+        # 🔥 關鍵修改：在合併後，加入「流水號 (x.name)」來確保 ID 絕對唯一
+        # 這樣就算名稱、時間一樣，因為列數不同，ID 也會不同
+        final_df['id'] = final_df.apply(lambda x: f"{x['日期']}_{x['時間']}_{x['活動名稱']}_{x.name}", axis=1)
+        
         return final_df, "Success"
+        
     except Exception as e:
         return None, str(e)
 
@@ -338,14 +347,16 @@ def load_user_saved_ids(user_id):
         print(f"讀取失敗: {e}")
         return []
 
-# --- 儲存功能 (自動修復標題版) ---
-def save_user_schedule_to_cloud(user_id, selected_df):
+# --- 儲存功能 (含密碼寫入版) ---
+def save_user_schedule_to_cloud(user_id, user_pin, selected_df):
     client = get_gspread_client()
     if not client: return False, "連線失敗"
     try:
         sh = client.open(SHEET_NAME_USERS_DB)
         ws = sh.worksheet(WORKSHEET_USERS_TAB)
-        TARGET_COLS = ["User_ID", "ID", "日期", "時間", "活動名稱", "地點"]
+        
+        # 定義欄位：多加了 Password
+        TARGET_COLS = ["User_ID", "Password", "ID", "日期", "時間", "活動名稱", "地點"]
         existing_data = ws.get_all_values()
         
         df_clean = pd.DataFrame(columns=TARGET_COLS)
@@ -358,8 +369,12 @@ def save_user_schedule_to_cloud(user_id, selected_df):
                 if valid_data:
                     df_clean = pd.DataFrame(valid_data, columns=TARGET_COLS)
 
+        # 準備新資料
         new_records_df = pd.DataFrame()
-        new_records_df["User_ID"] = [str(user_id)] * len(selected_df)
+        count = len(selected_df)
+        new_records_df["User_ID"] = [str(user_id)] * count
+        new_records_df["Password"] = [str(user_pin)] * count # 寫入密碼
+        
         col_mapping = {"id": "ID", "日期": "日期", "時間": "時間", "活動名稱": "活動名稱", "地點": "地點"}
         for src_col, target_col in col_mapping.items():
             if src_col in selected_df.columns:
@@ -368,6 +383,7 @@ def save_user_schedule_to_cloud(user_id, selected_df):
                 new_records_df[target_col] = ""
         new_records_df = new_records_df[TARGET_COLS]
 
+        # 剔除舊資料
         if not df_clean.empty:
             df_keep = df_clean[df_clean["User_ID"].astype(str) != str(user_id)]
         else:
@@ -411,8 +427,42 @@ def parse_datetime_range(date_str, time_str):
     except:
         return None, None
 
+# --- 新增：登入驗證函式 ---
+def check_login(user_id, input_pin):
+    client = get_gspread_client()
+    if not client: return False, [], "連線失敗"
+    
+    try:
+        sh = client.open(SHEET_NAME_USERS_DB)
+        ws = sh.worksheet(WORKSHEET_USERS_TAB)
+        data = ws.get_all_values()
+        
+        if len(data) < 2: return True, [], "新帳號" # 空資料庫，直接當新帳號
+        
+        df = pd.DataFrame(data[1:], columns=data[0])
+        
+        # 檢查是否有這個 User_ID
+        if "User_ID" in df.columns:
+            user_rows = df[df["User_ID"] == str(user_id)]
+            
+            if not user_rows.empty:
+                # 帳號存在，檢查密碼
+                stored_pin = str(user_rows.iloc[0]["Password"]).strip()
+                # 如果資料庫裡的密碼是空的 (舊資料)，或是密碼匹配
+                if stored_pin == "" or stored_pin == str(input_pin).strip():
+                    return True, user_rows["ID"].tolist(), "登入成功"
+                else:
+                    return False, [], "⚠️ 密碼錯誤，或是此暱稱已被他人使用！"
+            else:
+                # 帳號不存在 -> 新註冊
+                return True, [], "新帳號註冊"
+        
+        return True, [], "資料庫格式重置"
+    except Exception as e:
+        return False, [], f"系統錯誤: {e}"
+
 # ==========================================
-# 登入頁面
+# 登入頁面 (修改後的版本)
 # ==========================================
 if not st.session_state.is_logged_in:
     st.title("📅 2026 書展排程神器")
@@ -420,20 +470,18 @@ if not st.session_state.is_logged_in:
     with intro_col:
         st.markdown("""
         ### 歡迎使用！
-        這是專為書展設計的排程小幫手。
         **功能特色：**
         * ✅ **自動排程**：勾選活動，自動生成週曆
         * ✅ **雲端同步**：登入後可儲存您的專屬行程
         * ✅ **離線帶著走**：支援匯出手機行事曆 (.ics)
         """)
-        st.info("💡 建議先以「訪客模式」試用！")
     with login_col:
         with st.container(border=True):
             st.subheader("🔐 用戶登入")
             with st.form("login_form"):
                 input_id = st.text_input("👤 暱稱 / 帳號", placeholder="例如: Kevin")
-                input_pin = st.text_input("🔑 密碼 (PIN)", type="password", placeholder="自訂 4-6 碼")
-                
+                input_pin = st.text_input("🔑 密碼 (PIN)", type="password", placeholder="設定 4-6 碼密碼")
+                st.caption("※ 若暱稱是第一次使用，系統將自動以此密碼註冊。")
                 submit = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True)
             
             if st.button("👀 免登入試用", use_container_width=True):
@@ -444,17 +492,21 @@ if not st.session_state.is_logged_in:
 
             if submit:
                 if input_id and input_pin:
-                    with st.spinner("正在讀取雲端行程..."):
-                        saved_ids = load_user_saved_ids(input_id)
-                        st.session_state.saved_ids = saved_ids
-                        st.session_state.user_id = input_id
-                        st.session_state.user_pin = input_pin
-                        st.session_state.is_guest = False
-                        st.session_state.is_logged_in = True
-                    st.rerun()
+                    with st.spinner("驗證中..."):
+                        is_valid, saved_ids, msg = check_login(input_id, input_pin)
+                        
+                        if is_valid:
+                            st.session_state.saved_ids = saved_ids
+                            st.session_state.user_id = input_id
+                            st.session_state.user_pin = input_pin # 記住密碼以便存檔時使用
+                            st.session_state.is_guest = False
+                            st.session_state.is_logged_in = True
+                            st.rerun()
+                        else:
+                            st.error(msg)
                 else:
                     st.error("請輸入暱稱與密碼")
-    st.stop() 
+    st.stop()
 
 # ==========================================
 # 主程式
@@ -607,11 +659,16 @@ with c_cal_save:
     else:
         if st.button("💾 儲存到雲端", type="primary", use_container_width=True):
             with st.spinner("正在同步..."):
-                success, s_msg = save_user_schedule_to_cloud(st.session_state.user_id, final_selected)
+                # 這裡補上了 st.session_state.user_pin
+                success, s_msg = save_user_schedule_to_cloud(
+                    st.session_state.user_id, 
+                    st.session_state.user_pin, 
+                    final_selected
+                )
                 if success:
                     st.session_state.save_success_msg = "儲存成功！行程已更新"
                     st.session_state.saved_ids = final_selected['id'].tolist()
-                    st.rerun() # 重新整理以顯示上方的大型成功訊息
+                    st.rerun() 
                 else:
                     st.error(f"儲存失敗: {s_msg}")
 
