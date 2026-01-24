@@ -47,59 +47,38 @@ st.markdown("""
             color: #5C4B45 !important;
         }
 
-        /* --- 3. 側邊欄控制按鈕 (全時段固定顯示 + 強制不隱藏) --- */
-        
-        /* 針對收合(箭頭)與展開(叉叉)兩種狀態 */
-        section[data-testid="stSidebar"] > div > div:nth-child(2), /* 針對某些版本的 sidebar header */
-        [data-testid="stSidebarCollapsedControl"],
-        [data-testid="stSidebarExpandedControl"] {
-            
-            /* 🔥 關鍵 1：強制顯示，不准淡出 */
-            opacity: 1 !important;
-            visibility: visible !important;
+        /* --- 3. 側邊欄控制按鈕 (採用您提供的樣式結構) --- */
+        /* 針對收合狀態 (圓圈 + 箭頭) */
+        [data-testid="stSidebarCollapsedControl"] {
+            background-color: #FF8C69 !important; /* 改用主題珊瑚粉，如果要深橘色請改 #E67E22 */
+            border-radius: 50% !important;
+            width: 45px !important; /* 稍微大一點點，手機好按 */
+            height: 45px !important;
+            left: 15px !important;
+            top: 15px !important;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
             display: flex !important;
-            
-            /* 外觀設計 (珊瑚粉圓球) */
-            background-color: #FF8C69 !important; 
-            color: white !important;
-            border-radius: 50%;
-            border: 2px solid #FFFFFF;
-            box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
-            
-            /* 大小設定 */
-            width: 3rem !important;
-            height: 3rem !important;
-            
-            /* 🔥 關鍵 2：強制固定位置 (釘在左上角) */
-            position: fixed !important;
-            top: 1rem !important;
-            left: 1rem !important;
-            
-            /* 🔥 關鍵 3：層級最高，浮在所有內容之上 */
-            z-index: 1000002 !important; 
-            
-            /* 內容置中 */
             align-items: center !important;
             justify-content: center !important;
             
-            /* 移除 Streamlit 預設的 hover 變透明動畫 */
-            transition: transform 0.2s !important; 
-        }
-
-        /* 滑鼠移過去的效果 (放大就好，不要閃爍) */
-        [data-testid="stSidebarCollapsedControl"]:hover,
-        [data-testid="stSidebarExpandedControl"]:hover {
-            transform: scale(1.1);
-            background-color: #FF7043 !important;
-            opacity: 1 !important; /* 再次確保 hover 時也是不透明 */
+            /* 🔥 強制固定在左上角 (不隨頁面捲動) */
+            position: fixed !important; 
+            z-index: 999999 !important;
+            visibility: visible !important;
+            opacity: 1 !important;
         }
         
-        /* 修正圖示線條粗細，讓它在粉色底上更清楚 */
-        [data-testid="stSidebarExpandedControl"] svg,
+        /* 箭頭圖示顏色 */
         [data-testid="stSidebarCollapsedControl"] svg {
-            width: 1.6rem !important;
-            height: 1.6rem !important;
-            stroke-width: 2.5px !important; 
+            fill: white !important;
+            color: white !important; /* 確保線條也是白 */
+            transform: scale(1.3) !important;
+        }
+        
+        /* 滑鼠移過去的效果 */
+        [data-testid="stSidebarCollapsedControl"]:hover {
+            background-color: #FF7043 !important;
+            transform: scale(1.1);
         }
 
         /* --- 4. 修正深色元件 (針對您的截圖修正) --- */
