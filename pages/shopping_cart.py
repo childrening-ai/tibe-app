@@ -78,53 +78,70 @@ def save_data_overwrite(sheet, df, pin_code):
         st.error(f"儲存失敗: {e}")
         return False
 
-# --- 🔥 強力 AI 解析函式 (針對網頁優化) ---
-def analyze_image(image):
+# --- 🔥 強力 AI 解析函式 (安全除錯版) ---
+def analyze_image_robust(image):
+    st.info("🔄 步驟 1: 進入 AI 分析函式...") # Debug 訊息
+    
+    # 1. 檢查圖片物件
+    if image is None:
+        st.error("❌ 錯誤：圖片物件是空的 (None)")
+        return None
+    
+    st.text(f"📸 步驟 2: 圖片讀取成功，尺寸: {image.size}")
+
+    # 2. 設定 AI 模型 (先用最穩的 1.5-flash，確認能跑再說)
     try:
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        # 暫時改回 1.5-flash，因為 2.0-flash-exp 很容易報錯 404
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        st.text("🤖 步驟 3: AI 模型 (1.5-flash) 初始化成功")
+    except Exception as e:
+        st.error(f"❌ 錯誤：模型初始化失敗。原因：{e}")
+        return None
 
-        # 🔥 這裡根據您的建議修改了 Prompt
-        prompt = """
-        你是一個精通書籍資訊的 AI 助理。請分析這張圖片（書本封面、海報或網頁截圖）。
-        請嚴格遵守以下 JSON 格式回傳，不要包含任何 Markdown 標記：
-        {
-            "書名": "書籍名稱",
-            "出版社": "出版社名稱",
-            "定價": 0
-        }
+    # 3. 準備 Prompt
+    prompt = """
+    你是一個精通書籍資訊的 AI 助理。請分析這張圖片。
+    請嚴格遵守以下 JSON 格式回傳，不要包含任何 Markdown 標記：
+    {
+        "書名": "書籍名稱",
+        "出版社": "出版社名稱",
+        "定價": 0
+    }
+    
+    規則：
+    1. 【定價】：請尋找「定價：」後面的數字。
+    2. 忽略刪除線，禁止讀取紅色優惠價。
+    3. 只回傳純數字 (Integer)。
+    """
 
-        請依照以下優先順序提取資訊（特別是針對「博客來」等書籍網頁）：
-        
-        1. 【書名】：通常是畫面中字體最大、最顯眼的標題文字。
-        
-        2. 【出版社】：
-           - 請尋找「出版社：」或「出版社」這幾個關鍵字。
-           - 抓取緊接在這些關鍵字後面的名稱。
-           
-        3. 【定價】(非常重要)：
-           - 請尋找「定價：」或「定價」這幾個關鍵字後面的數字。
-           - ⚠️ 重要規則：網頁上的定價數字常會有「刪除線」（橫槓），請忽略刪除線，依然讀取該數字。
-           - ⚠️ 排除規則：嚴格禁止讀取「優惠價」、「會員價」、「折」或紅色的大數字。那些是打折後的價格，我要的是原價。
-           - 格式：只回傳純數字 (Integer)，不要有 $ 符號。
-
-        如果真的找不到定價，請填 0。
-        """
-        
+    # 4. 發送請求 (這是最容易崩潰的地方)
+    try:
+        st.text("📡 步驟 4: 正在發送圖片給 Google...")
         response = model.generate_content([prompt, image])
-        raw_text = response.text
+        st.text("✅ 步驟 5: 收到 Google 回傳資料")
         
-        st.session_state.debug_ai_raw = raw_text
+        raw_text = response.text
+        st.session_state.debug_ai_raw = raw_text # 存起來給你看
 
-        # 強力清洗：抓取 {...} 區塊
+    except Exception as e:
+        # 這裡會抓出具體的 API 錯誤 (例如 Key 無效、配額不足)
+        st.error(f"❌ 錯誤：呼叫 API 失敗。原因：{e}")
+        st.session_state.debug_ai_raw = f"API Error: {e}"
+        return None
+
+    # 5. 解析 JSON
+    try:
         match = re.search(r'\{.*\}', raw_text, re.DOTALL)
         if match:
             json_str = match.group(0)
-            return json.loads(json_str)
+            data = json.loads(json_str)
+            st.text("🎉 步驟 6: JSON 解析成功！")
+            return data
         else:
-            return {"error": "No JSON found", "raw": raw_text}
-
+            st.warning("⚠️ 警告：AI 有回傳文字，但找不到 JSON 格式。")
+            return {"error": "No JSON", "raw": raw_text}
     except Exception as e:
-        st.session_state.debug_ai_raw = f"Error: {str(e)}"
+        st.error(f"❌ 錯誤：JSON 解析失敗。原因：{e}")
         return None
 
 # --- 主程式 ---
