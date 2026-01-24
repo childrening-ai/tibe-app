@@ -82,7 +82,7 @@ def save_data_overwrite(sheet, df, pin_code):
 # --- 🔥 新增：AI 辨識函式 ---
 def analyze_image(image):
     try:
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.0-flash')
         prompt = """
         請分析這張圖片（書本封面、海報或網頁截圖），提取以下資訊。
         請直接回傳 JSON 格式，不要有Markdown標記，欄位如下：
