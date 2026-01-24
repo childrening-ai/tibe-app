@@ -19,12 +19,12 @@ st.set_page_config(
 SHEET_NAME = "2026國際書展行事曆"
 WORKSHEETS_TO_LOAD = ["國際書展"]
 
-# --- 初始化 Session State (用於日曆跳轉) ---
+# --- 初始化 Session State ---
 if "calendar_focus_date" not in st.session_state:
-    st.session_state.calendar_focus_date = "2026-02-04" # 預設書展第一天
+    st.session_state.calendar_focus_date = "2026-02-04" 
 
 if "prev_selection_counts" not in st.session_state:
-    st.session_state.prev_selection_counts = {} # 用來偵測哪個日期的勾選數變了
+    st.session_state.prev_selection_counts = {}
 
 # --- 2. 連線與資料讀取 ---
 @st.cache_data(ttl=300)
@@ -48,7 +48,6 @@ def load_sheet_data():
             return None, f"找不到檔案：{SHEET_NAME}"
 
         all_frames = []
-        # 標準欄位定義
         STANDARD_COLS = ["日期", "時間", "活動名稱", "地點", "主講人", "主持人", "類型", "備註", "詳細內容"]
 
         for ws_name in WORKSHEETS_TO_LOAD:
@@ -61,19 +60,17 @@ def load_sheet_data():
                 df['來源'] = ws_name 
                 df.columns = [c.strip() for c in df.columns]
                 
-                # 自動校正欄位名稱
                 if "主講人" not in df.columns and "講者" in df.columns:
                     df.rename(columns={"講者": "主講人"}, inplace=True)
 
-                # 補齊缺失欄位
                 for col in STANDARD_COLS:
                     if col not in df.columns:
                         df[col] = "" 
                 
                 df = df.fillna("")
                 
-                # 產生唯一 ID
-                df['id'] = df.apply(lambda x: str(hash(str(x['日期']) + str(x['時間']) + str(x['活動名稱']))), axis=1)
+                # 🔥 修正 ID 生成：改用純字串拼接，比 hash 更穩定
+                df['id'] = df.apply(lambda x: f"{x['日期']}_{x['時間']}_{x['活動名稱']}", axis=1)
                 
                 all_frames.append(df)
             except Exception as e:
@@ -81,34 +78,47 @@ def load_sheet_data():
                 pass
 
         if not all_frames: return pd.DataFrame(), "無資料"
-        
         final_df = pd.concat(all_frames, ignore_index=True)
         return final_df, "Success"
 
     except Exception as e:
         return None, str(e)
 
-# --- 時間解析工具 ---
+# --- 🔥 修正版：時間解析工具 ---
 def parse_datetime_range(date_str, time_str):
     try:
-        clean_date = str(date_str).split(" ")[0] 
+        clean_date = str(date_str).split(" ")[0].strip()
+        # 清理時間字串
         clean_time = str(time_str).replace("：", ":").replace("~", "-").replace(" ", "")
         
         if "-" in clean_time:
-            start_t, end_t = clean_time.split("-")
+            parts = clean_time.split("-")
+            start_t = parts[0]
+            end_t = parts[1]
         else:
             start_t = clean_time
             end_t = clean_time 
-            
+        
+        # 簡單補救：如果時間只有 "14:00"，補上秒數變成 "14:00:00" 比較保險，或者依格式判斷
+        # 這裡假設格式是 HH:MM
+        
         start_dt_str = f"{clean_date} {start_t}"
         end_dt_str = f"{clean_date} {end_t}"
         
-        fmt = "%Y-%m-%d%H:%M"
+        # 🔥 修正處：這裡補上了一個空白，對應 f-string 裡的空白
+        fmt = "%Y-%m-%d %H:%M" 
+        
         try:
             start_dt = datetime.datetime.strptime(start_dt_str, fmt)
             end_dt = datetime.datetime.strptime(end_dt_str, fmt)
         except ValueError:
-            return None, None
+            # 如果解析失敗，試試看有沒有秒數
+            fmt_sec = "%Y-%m-%d %H:%M:%S"
+            try:
+                start_dt = datetime.datetime.strptime(start_dt_str, fmt_sec)
+                end_dt = datetime.datetime.strptime(end_dt_str, fmt_sec)
+            except:
+                return None, None
         
         return start_dt, end_dt
     except:
@@ -141,8 +151,6 @@ proc_df['end_dt'] = end_list
 # --- 版面配置 ---
 col_list, col_cal = st.columns([0.6, 0.4])
 all_selected_ids = []
-
-# 用來暫存這次迴圈的勾選數，稍後跟上次比較
 current_selection_counts = {}
 
 # --- 左側：活動清單 ---
@@ -170,7 +178,6 @@ with col_list:
     if not unique_dates:
         st.info("沒有符合條件的活動")
     else:
-        # Tab 標籤
         tab_names = [d[5:] if len(str(d))>5 else str(d) for d in unique_dates]
         tabs = st.tabs(tab_names)
         
@@ -182,7 +189,6 @@ with col_list:
                 if "參加" not in day_df.columns:
                     day_df.insert(0, "參加", False)
                 
-                # 顯示表格
                 edited_day_df = st.data_editor(
                     day_df,
                     column_config={
@@ -199,51 +205,55 @@ with col_list:
                     key=f"editor_{date_str}"
                 )
                 
-                # --- 🔥 關鍵邏輯：偵測勾選變化 ---
                 selected_rows = edited_day_df[edited_day_df["參加"] == True]
+                
+                # 自動跳轉日曆邏輯
                 current_count = len(selected_rows)
                 current_selection_counts[date_str] = current_count
-                
-                # 比較「這次的數量」跟「上次的數量」
                 prev_count = st.session_state.prev_selection_counts.get(date_str, 0)
                 
                 if current_count != prev_count:
-                    # 如果數量變了，代表使用者剛剛點了這一天，更新日曆焦點！
                     st.session_state.calendar_focus_date = date_str
                 
                 if not selected_rows.empty:
                     all_selected_ids.extend(selected_rows['id'].tolist())
 
-    # 更新狀態紀錄
     st.session_state.prev_selection_counts = current_selection_counts
 
 # --- 右側：日曆 & 匯出 ---
 with col_cal:
     st.subheader("2. 行程預覽 🗓️")
     
-    final_selected = proc_df[proc_df['id'].isin(all_selected_ids)]
+    # 這裡過濾出「被勾選」且「時間解析成功」的資料
+    final_selected = proc_df[
+        (proc_df['id'].isin(all_selected_ids)) & 
+        (proc_df['start_dt'].notnull()) # 確保時間有效
+    ]
     
-    cal_events = []
-    if not final_selected.empty:
-        for _, row in final_selected.iterrows():
-            if row['start_dt'] and row['end_dt']:
-                bg_color = "#3788d8"
-                if str(row['來源']) != "國際書展": bg_color = "#ff9f43"
-                
-                cal_events.append({
-                    "title": row['活動名稱'],
-                    "start": row['start_dt'].isoformat(),
-                    "end": row['end_dt'].isoformat(),
-                    "backgroundColor": bg_color,
-                    "borderColor": bg_color
-                })
+    # Debug 訊息：告訴使用者到底抓到了幾筆
+    if len(all_selected_ids) > 0 and len(final_selected) == 0:
+        st.warning(f"⚠️ 您勾選了 {len(all_selected_ids)} 筆，但時間格式似乎都無法解析，無法顯示在日曆上。")
+    elif len(final_selected) > 0:
+        st.success(f"已顯示 {len(final_selected)} 場活動")
 
-    # 🔥 使用 session_state 中的焦點日期
+    cal_events = []
+    for _, row in final_selected.iterrows():
+        bg_color = "#3788d8"
+        if str(row['來源']) != "國際書展": bg_color = "#ff9f43"
+        
+        cal_events.append({
+            "title": row['活動名稱'],
+            "start": row['start_dt'].isoformat(),
+            "end": row['end_dt'].isoformat(),
+            "backgroundColor": bg_color,
+            "borderColor": bg_color
+        })
+
     initial_view_date = st.session_state.calendar_focus_date
 
     calendar_options = {
         "initialView": "timeGridDay",
-        "initialDate": initial_view_date, # 這裡綁定動態日期
+        "initialDate": initial_view_date,
         "headerToolbar": {
             "left": "prev,next",
             "center": "title",
@@ -255,7 +265,6 @@ with col_cal:
         "nowIndicator": True
     }
     
-    # key 加上 initial_view_date，確保日曆元件會強制重新渲染
     calendar(events=cal_events, options=calendar_options, key=f"main_calendar_{initial_view_date}")
     
     st.divider()
@@ -266,7 +275,7 @@ with col_cal:
     else:
         c1, c2, c3 = st.columns(3)
         
-        # 1. ICS 匯出
+        # 1. ICS
         with c1:
             cal_obj = Calendar()
             for _, row in final_selected.iterrows():
