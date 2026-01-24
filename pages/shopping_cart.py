@@ -119,9 +119,52 @@ def analyze_image_robust(image):
         st.session_state.debug_ai_raw = f"Error: {str(e)}"
         return None
 
+# --- 🔥 新增：處理表單提交的 Callback 函式 ---
+def submit_book_callback(sheet, current_df, pin_code):
+    """
+    這個函式會在按鈕按下後、畫面重繪前執行。
+    這時修改 st.session_state 是安全的。
+    """
+    # 1. 從 Session State 撈取目前輸入框的值
+    val_title = st.session_state.get("in_title", "").strip()
+    val_pub = st.session_state.get("in_pub", "").strip()
+    val_price = st.session_state.get("in_price", 0)
+    val_discount = st.session_state.get("in_discount", 1.0) # 記得給 selectbox 加 key
+    val_note = st.session_state.get("in_note", "").strip()
+    
+    # 計算折扣價
+    calc_final = int(val_price * val_discount)
+
+    if not val_title:
+        st.error("❌ 請至少輸入書名")
+        return
+
+    # 2. 建立新資料
+    new_row = pd.DataFrame([{
+        "書名": val_title,
+        "出版社": val_pub,
+        "定價": val_price,
+        "折扣": val_discount,
+        "折扣價": calc_final,
+        "狀態": "待購",
+        "備註": val_note
+    }])
+
+    # 3. 合併並儲存
+    updated_df = pd.concat([current_df, new_row], ignore_index=True)
+    if save_data_overwrite(sheet, updated_df, pin_code):
+        st.toast(f"✅ 已加入：{val_title}")
+        
+        # 4. 🔥 安全清空輸入框 (這是原本報錯的地方，但在這裡做是合法的)
+        st.session_state["in_title"] = ""
+        st.session_state["in_pub"] = ""
+        st.session_state["in_price"] = 0
+        st.session_state["in_note"] = ""
+        # 注意：折扣通常保留上次設定，或設回預設值 0.79，看您習慣
+        # st.session_state["in_discount"] = 0.79 
+
 # --- 主程式 ---
 
-# 這裡不再需要 form_title 這種中間人變數了，我們直接操作 Widget Key
 if "debug_ai_raw" not in st.session_state: st.session_state.debug_ai_raw = ""
 
 st.sidebar.title("🔐 用戶登入")
@@ -155,7 +198,7 @@ st.sidebar.success(f"Hi, {st.session_state.user_id}")
 st.session_state.budget = st.sidebar.number_input("💰 總預算設定", value=st.session_state.budget, step=500)
 if st.sidebar.button("登出"):
     st.session_state.is_logged_in = False
-    st.session_state.user_id = "" # 徹底清除記憶
+    st.session_state.user_id = "" 
     st.rerun()
 
 ss = connect_to_spreadsheet()
@@ -211,18 +254,13 @@ with st.container(border=True):
                         result = analyze_image_robust(image)
                         
                         if result:
-                            # --- 🔥 關鍵修正區：直接綁架 Widget Key ---
-                            # 我們不更新 form_title，而是直接更新 "in_title" 這些 Key
-                            
-                            # 1. 書名
+                            # 直接寫入 Key
                             t_val = result.get("書名") or result.get("書籍名稱") or result.get("Title") or ""
                             st.session_state["in_title"] = str(t_val)
 
-                            # 2. 出版社
                             p_val = result.get("出版社") or result.get("Publisher") or ""
                             st.session_state["in_pub"] = str(p_val)
 
-                            # 3. 定價
                             price_raw = result.get("定價") or result.get("Price") or 0
                             try:
                                 if isinstance(price_raw, str):
@@ -237,7 +275,7 @@ with st.container(border=True):
                             
                             st.success(f"✅ 辨識成功！")
                             time.sleep(0.5)
-                            st.rerun() # 重整後，下方的 text_input 會發現 key 已經有值了，就會顯示出來
+                            st.rerun()
                         else:
                             st.error("⚠️ 辨識失敗，無法解析資料。")
             
@@ -248,15 +286,12 @@ with st.container(border=True):
             st.warning("⚠️ 請設定 Gemini API Key")
 
     # 表單區
-    # 注意：這裡不需要再寫 value=... 了，因為我們是用 Key 直接控制
-    # 只要 session_state 裡有 "in_title"，它就會自動顯示
     c1, c2 = st.columns([3, 1])
     with c1:
         new_title = st.text_input("📘 書名 (必填)", key="in_title")
     with c2:
         st.write("") 
         st.write("") 
-        # 為了即時顯示按鈕，我們判斷當下的 session_state
         current_title = st.session_state.get("in_title", "")
         if current_title:
             st.markdown(f'''<a href="https://search.books.com.tw/search/query/key/{current_title}" target="_blank">
@@ -267,7 +302,10 @@ with st.container(border=True):
     c3, c4, c5, c6 = st.columns(4)
     with c3: new_publisher = st.text_input("🏢 出版社", key="in_pub")
     with c4: new_price = st.number_input("💰 定價", min_value=0, step=10, key="in_price")
-    with c5: new_discount = st.selectbox("📉 折扣", options=[1.0, 0.79, 0.85, 0.9, 0.75, 0.66], index=1, format_func=lambda x: f"{int(x*100)}折" if x < 1 else "不打折")
+    
+    # 🔥 注意：我在這裡加了 key="in_discount"，為了讓 Callback 能讀到它
+    with c5: new_discount = st.selectbox("📉 折扣", options=[1.0, 0.79, 0.85, 0.9, 0.75, 0.66], index=1, format_func=lambda x: f"{int(x*100)}折" if x < 1 else "不打折", key="in_discount")
+    
     with c6: 
         calc_final = int(new_price * new_discount)
         new_final_price = st.number_input("🏷️ 折扣後價格", value=calc_final, step=1)
@@ -276,37 +314,14 @@ with st.container(border=True):
     with c7: new_note = st.text_input("📝 備註 (選填)", key="in_note")
     with c8:
         st.write("")
-        if st.button("➕ 加入清單", type="primary", use_container_width=True):
-            # 取值也要從 key 裡面取
-            val_title = st.session_state.get("in_title", "")
-            val_pub = st.session_state.get("in_pub", "")
-            val_price = st.session_state.get("in_price", 0)
-            val_note = st.session_state.get("in_note", "")
-
-            if val_title:
-                new_row = pd.DataFrame([{
-                    "書名": val_title,
-                    "出版社": val_pub,
-                    "定價": val_price,
-                    "折扣": new_discount,
-                    "折扣價": new_final_price,
-                    "狀態": "待購",
-                    "備註": val_note
-                }])
-                df = pd.concat([df, new_row], ignore_index=True)
-                if save_data_overwrite(sheet, df, st.session_state.user_pin):
-                    st.toast(f"✅ 已加入：{val_title}")
-                    
-                    # 清空輸入框：直接把 Key 設回空值
-                    st.session_state["in_title"] = ""
-                    st.session_state["in_pub"] = ""
-                    st.session_state["in_price"] = 0
-                    st.session_state["in_note"] = ""
-                    
-                    time.sleep(0.5)
-                    st.rerun()
-            else:
-                st.error("❌ 請至少輸入書名")
+        # 🔥 修改處：改成使用 on_click 回調
+        # 我們把 df 和 sheet 傳進去
+        st.button("➕ 加入清單", 
+                  type="primary", 
+                  use_container_width=True, 
+                  on_click=submit_book_callback,
+                  args=(sheet, df, st.session_state.user_pin)
+        )
 
 st.markdown("---")
 st.subheader("📋 管理清單")
