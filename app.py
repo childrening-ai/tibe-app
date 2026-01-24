@@ -19,140 +19,156 @@ st.set_page_config(
 )
 
 # ==========================================
-# 🎨 UI 美化工程 (親子柔和風格版)
+# 🎨 UI 美化工程 (親子柔和風格 - 修正深色區塊版)
 # ==========================================
 st.markdown("""
     <style>
-        /* --- 1. 全域配色與字體設定 --- */
-        /* 主背景設為白色 */
+        /* --- 1. 全域設定 (強制淺色主題感) --- */
         .stApp {
             background-color: #FFFFFF;
-            color: #4A4A4A; /* 文字改為深暖灰 */
+            color: #4A4A4A;
         }
         
-        /* 調整手機上的版面間距 (避開箭頭) */
+        /* 修正手機版面頂部間距 (避開箭頭) */
         .block-container {
-            padding-top: 2rem !important;
+            padding-top: 3rem !important; /* 加大一點，讓箭頭更清楚 */
             padding-bottom: 5rem !important;
         }
-        h1 { font-size: 1.6rem !important; color: #4A4A4A !important; }
-        h2, h3 { color: #5C5C5C !important; }
-        footer {visibility: hidden;}
-
-        /* --- 2. 側邊欄設計 (溫暖米色) --- */
+        h1 { font-size: 1.8rem !important; color: #4A4A4A !important; font-weight: 700 !important; }
+        h2, h3 { color: #5C4B45 !important; } /* 深咖啡色標題 */
+        
+        /* --- 2. 側邊欄設計 (奶油米色) --- */
         [data-testid="stSidebar"] {
-            background-color: #FFF9F0; /* 暖米色背景 */
-            border-right: 1px solid #EFE6D8; /* 柔和邊框 */
+            background-color: #FFF9F0;
+            border-right: 2px solid #F3E5D8;
         }
-        /* 側邊欄內的文字 */
-        [data-testid="stSidebar"] .stMarkdown, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] p {
-            color: #5C4B45 !important; /* 深咖啡色文字 */
+        /* 側邊欄文字顏色 */
+        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
+            color: #5C4B45 !important;
         }
 
-        /* --- 3. 側邊欄收合箭頭 (可愛圓形設計) --- */
+        /* --- 3. 側邊欄收合箭頭 (重點設計) --- */
         [data-testid="stSidebarCollapsedControl"] {
-            background-color: #FF8C69 !important; /* 珊瑚粉底色 */
-            color: white !important; /* 白色箭頭 */
-            border-radius: 50%; /* 圓形 */
-            border: 2px solid white; /* 白色描邊，增加層次 */
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1); /* 微微陰影 */
-            width: 2.5rem;
-            height: 2.5rem;
-            /* 調整位置，讓它看起來像個小標籤 */
+            background-color: #FF8C69 !important; /* 珊瑚粉圓球 */
+            color: white !important;
+            border-radius: 50%;
+            border: 2px solid #FFFFFF;
+            box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
+            width: 3rem;  /* 加大一點讓手指好點 */
+            height: 3rem;
             top: 1rem;
             left: 1rem;
         }
-        /* 滑鼠移過去的效果 */
         [data-testid="stSidebarCollapsedControl"]:hover {
-            background-color: #FF7043 !important; /* 稍微深一點 */
-            transform: scale(1.05); /* 微微放大 */
+            transform: scale(1.1);
+            background-color: #FF7043 !important;
         }
 
-        /* --- 4. 按鈕優化 (圓潤親切感) --- */
-        /* 一般按鈕 */
+        /* --- 4. 修正深色元件 (針對您的截圖修正) --- */
+        
+        /* 下拉選單 (Multiselect) - 去除黑色背景 */
+        .stMultiSelect span[data-baseweb="tag"] {
+            background-color: #FFE0B2 !important; /* 淺橘色標籤 */
+            color: #BF360C !important;
+        }
+        
+        /* 表格 (Data Editor) - 修正黑色標題列 */
+        [data-testid="stDataFrame"] th {
+            background-color: #FFEEE0 !important; /* 淺橘粉底 */
+            color: #4A4A4A !important; /* 深灰字 */
+            font-size: 1rem !important;
+        }
+        [data-testid="stDataFrame"] td {
+            background-color: #FFFFFF !important;
+            color: #4A4A4A !important;
+        }
+        
+        /* 輸入框 (Text Input) - 圓潤化 */
+        .stTextInput input, .stSelectbox div[data-baseweb="select"] {
+            border-radius: 12px !important;
+            border: 1px solid #FFCCBC !important;
+        }
+        .stTextInput input:focus {
+            border-color: #FF8C69 !important;
+            box-shadow: 0 0 0 2px rgba(255, 140, 105, 0.2) !important;
+        }
+
+        /* --- 5. 按鈕設計 (糖果風格) --- */
         .stButton > button {
-            border-radius: 20px !important; /* 圓角 */
-            border: 1px solid #FF8C69 !important;
+            border-radius: 25px !important;
+            font-weight: bold;
+            border: 2px solid #FF8C69 !important;
             color: #FF8C69 !important;
             background-color: white !important;
-            font-weight: bold;
+            transition: all 0.2s;
         }
-        /* 主要按鈕 (Primary - 如儲存) */
+        /* 主要按鈕 (如儲存) */
         .stButton > button[kind="primary"] {
-            background-color: #FF8C69 !important; /* 珊瑚粉 */
+            background-color: #FF8C69 !important;
             color: white !important;
+            box-shadow: 0 4px 6px rgba(255, 140, 105, 0.3);
             border: none !important;
-            box-shadow: 0 2px 4px rgba(255, 140, 105, 0.4);
         }
-        /* 按鈕 hover 效果 */
         .stButton > button:hover {
-            opacity: 0.9;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
         }
 
-        /* --- 5. 分頁籤 (Tabs) 設計 --- */
-        /* 分頁容器 */
+        /* --- 6. 分頁籤 (Tabs) - 膠囊風格 --- */
         .stTabs [data-baseweb="tab-list"] {
-            gap: 8px;
+            gap: 10px;
             background-color: transparent;
-            padding: 5px 0px;
-            overflow-x: auto;
-            flex-wrap: nowrap;
         }
-        /* 未選中的分頁 */
         .stTabs [data-baseweb="tab"] {
             height: 40px;
-            white-space: nowrap;
-            background-color: #F7F7F7; /* 淺灰白 */
-            border-radius: 20px; /* 圓角像膠囊 */
-            color: #7D7D7D;
-            font-size: 15px;
+            background-color: #F5F5F5;
+            border-radius: 20px;
+            color: #888;
             font-weight: 600;
-            padding: 0px 15px;
-            border: 1px solid #E0E0E0;
-            flex: 0 0 auto;
+            border: none;
+            padding: 0 20px;
         }
-        /* 選中的分頁 (反白效果) */
         .stTabs [aria-selected="true"] {
-            background-color: #FF8C69 !important; /* 珊瑚粉 */
-            color: #FFFFFF !important;
-            border: 1px solid #FF8C69;
-            box-shadow: 0 2px 4px rgba(255, 140, 105, 0.3);
-        }
-        
-        /* --- 6. 日曆樣式微調 --- */
-        .fc-toolbar-title {
-            font-size: 1.2rem !important;
-            font-weight: 700 !important;
-            color: #4A4A4A;
-        }
-        /* 日曆上的按鈕 */
-        .fc-button {
             background-color: #FF8C69 !important;
-            border-color: #FF8C69 !important;
-            border-radius: 8px !important;
-            font-size: 0.8rem !important;
+            color: white !important;
+            box-shadow: 0 2px 5px rgba(255, 140, 105, 0.4);
         }
 
-        /* --- 7. 成功提示框 (柔和綠) --- */
+        /* --- 7. 日曆 (FullCalendar) 配色 --- */
+        .fc-toolbar-title {
+            color: #4A4A4A !important;
+            font-family: 'Helvetica', sans-serif;
+        }
+        .fc-col-header-cell {
+            background-color: #FFF3E0 !important; /* 星期幾的背景 */
+            color: #E65100 !important;
+        }
+        .fc-button-primary {
+            background-color: #FF8C69 !important;
+            border-color: #FF8C69 !important;
+        }
+
+        /* --- 8. 登入框與提示框 --- */
+        [data-testid="stForm"] {
+            background-color: #FFFCF8;
+            border: 2px solid #FFF0E0;
+            border-radius: 20px;
+            padding: 2rem;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
         .success-box {
-            background-color: #E8F5E9; /* 極淺綠 */
-            color: #2E7D32; /* 深綠文字 */
-            padding: 15px;
-            margin-bottom: 15px;
+            background-color: #E8F5E9; /* 柔和綠 */
+            color: #2E7D32;
+            border: 2px solid #C8E6C9;
             border-radius: 12px;
-            border: 2px solid #C8E6C9; /* 淺綠邊框 */
+            padding: 1rem;
             text-align: center;
             font-weight: bold;
-            font-size: 1.1rem;
         }
         
-        /* --- 8. 登入框優化 --- */
-        [data-testid="stForm"] {
-            border: 2px solid #FFF0E0;
-            background-color: #FFFCF8;
-            border-radius: 15px;
-            padding: 20px;
-        }
+        /* 隱藏不必要的元素 */
+        footer {visibility: hidden;}
+        #MainMenu {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 # ==========================================
