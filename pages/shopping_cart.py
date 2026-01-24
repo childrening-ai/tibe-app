@@ -119,49 +119,36 @@ def analyze_image_robust(image):
         st.session_state.debug_ai_raw = f"Error: {str(e)}"
         return None
 
-# --- 🔥 新增：處理表單提交的 Callback 函式 ---
+# --- Callback 函式 ---
 def submit_book_callback(sheet, current_df, pin_code):
-    """
-    這個函式會在按鈕按下後、畫面重繪前執行。
-    這時修改 st.session_state 是安全的。
-    """
-    # 1. 從 Session State 撈取目前輸入框的值
     val_title = st.session_state.get("in_title", "").strip()
     val_pub = st.session_state.get("in_pub", "").strip()
     val_price = st.session_state.get("in_price", 0)
-    val_discount = st.session_state.get("in_discount", 1.0) # 記得給 selectbox 加 key
+    val_discount = st.session_state.get("in_discount", 1.0)
     val_note = st.session_state.get("in_note", "").strip()
-    
-    # 計算折扣價
     calc_final = int(val_price * val_discount)
 
     if not val_title:
         st.error("❌ 請至少輸入書名")
         return
 
-    # 2. 建立新資料
     new_row = pd.DataFrame([{
         "書名": val_title,
         "出版社": val_pub,
         "定價": val_price,
         "折扣": val_discount,
         "折扣價": calc_final,
-        "狀態": "待購",
+        "狀態": "待購", # 預設狀態
         "備註": val_note
     }])
 
-    # 3. 合併並儲存
     updated_df = pd.concat([current_df, new_row], ignore_index=True)
     if save_data_overwrite(sheet, updated_df, pin_code):
         st.toast(f"✅ 已加入：{val_title}")
-        
-        # 4. 🔥 安全清空輸入框 (這是原本報錯的地方，但在這裡做是合法的)
         st.session_state["in_title"] = ""
         st.session_state["in_pub"] = ""
         st.session_state["in_price"] = 0
         st.session_state["in_note"] = ""
-        # 注意：折扣通常保留上次設定，或設回預設值 0.79，看您習慣
-        # st.session_state["in_discount"] = 0.79 
 
 # --- 主程式 ---
 
@@ -254,7 +241,6 @@ with st.container(border=True):
                         result = analyze_image_robust(image)
                         
                         if result:
-                            # 直接寫入 Key
                             t_val = result.get("書名") or result.get("書籍名稱") or result.get("Title") or ""
                             st.session_state["in_title"] = str(t_val)
 
@@ -303,7 +289,6 @@ with st.container(border=True):
     with c3: new_publisher = st.text_input("🏢 出版社", key="in_pub")
     with c4: new_price = st.number_input("💰 定價", min_value=0, step=10, key="in_price")
     
-    # 🔥 注意：我在這裡加了 key="in_discount"，為了讓 Callback 能讀到它
     with c5: new_discount = st.selectbox("📉 折扣", options=[1.0, 0.79, 0.85, 0.9, 0.75, 0.66], index=1, format_func=lambda x: f"{int(x*100)}折" if x < 1 else "不打折", key="in_discount")
     
     with c6: 
@@ -314,8 +299,6 @@ with st.container(border=True):
     with c7: new_note = st.text_input("📝 備註 (選填)", key="in_note")
     with c8:
         st.write("")
-        # 🔥 修改處：改成使用 on_click 回調
-        # 我們把 df 和 sheet 傳進去
         st.button("➕ 加入清單", 
                   type="primary", 
                   use_container_width=True, 
@@ -331,7 +314,28 @@ if df.empty:
 else:
     df_display = df.copy()
     df_display.insert(0, "🗑️ 刪除", False)
-    edited_df = st.data_editor(df_display, use_container_width=True, num_rows="fixed", key="main_editor", column_config={"🗑️ 刪除": st.column_config.CheckboxColumn("刪除?", width="small")})
+    
+    # 🔥 關鍵修改：設定 column_config 使狀態變成下拉選單
+    edited_df = st.data_editor(
+        df_display,
+        use_container_width=True,
+        num_rows="fixed",
+        key="main_editor",
+        column_config={
+            "🗑️ 刪除": st.column_config.CheckboxColumn("刪除?", width="small"),
+            "定價": st.column_config.NumberColumn("定價", format="$%d"),
+            "折扣": st.column_config.NumberColumn("折扣", format="%.2f"),
+            "折扣價": st.column_config.NumberColumn("折扣價", format="$%d"),
+            # 👇 這裡強制設定為下拉選單
+            "狀態": st.column_config.SelectboxColumn(
+                "狀態",
+                options=["待購", "已購", "猶豫中", "放棄"],
+                width="medium",
+                required=True # 設為必填，防止變成空白
+            ),
+            "備註": st.column_config.TextColumn("備註", width="large"),
+        }
+    )
     
     btn_col1, btn_col2 = st.columns([1, 1])
     with btn_col1:
