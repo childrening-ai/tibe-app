@@ -199,38 +199,52 @@ st.markdown("""
             padding-bottom: 5px !important;
         }
 
-        /* --- 11. 日曆按鈕優化 (去除黑色 + 手機分行) --- */
+        /* --- 11. 日曆按鈕優化 (終極強制分行版) --- */
         
-        /* A. 去除點擊後的黑色/灰色特效 */
+        /* A. 去除點擊後的黑色特效 (維持不變) */
         .fc-button-active, .fc-button:active, .fc-button:focus {
-            background-color: #FF8C69 !important; /* 維持珊瑚色 */
+            background-color: #FF8C69 !important;
             border-color: #FF8C69 !important;
             color: white !important;
-            box-shadow: none !important; /* 去除外框光暈 */
+            box-shadow: none !important;
             opacity: 1 !important;
         }
         
-        /* B. 手機版強制分行顯示 (避免擁擠) */
-        @media only screen and (max-width: 600px) {
+        /* B. 手機版強制分行 (加強版) */
+        /* 將觸發寬度拉大到 850px，確保所有手機都會生效 */
+        @media only screen and (max-width: 850px) {
+            
+            /* 1. 強制整個工具列變成垂直排列 */
             .fc-header-toolbar {
                 display: flex !important;
-                flex-direction: column !important; /* 改為垂直排列 */
-                gap: 10px !important; /* 上下行之間的間距 */
+                flex-direction: column !important;
+                align-items: center !important;
+                gap: 12px !important; /* 上下間距 */
+                height: auto !important;
+                margin-bottom: 20px !important;
             }
             
-            /* 讓每一區塊 (左中右) 都置中並撐開 */
+            /* 2. 強制左、中、右三個區塊都佔滿一行並置中 */
             .fc-toolbar-chunk {
                 display: flex !important;
-                justify-content: center !important;
-                width: 100% !important;
+                width: 100% !important; /* 強制佔滿寬度 */
+                justify-content: center !important; /* 按鈕置中 */
+                margin: 2px 0 !important;
             }
             
-            /* 微調標題字體，分行後可以稍微大一點 */
+            /* 3. 如果是中間的標題，字稍微大一點 */
             .fc-toolbar-title {
+                font-size: 1.5rem !important;
                 margin: 5px 0 !important;
             }
+            
+            /* 4. 微調按鈕大小，讓它在分行後更好按 */
+            .fc-button {
+                padding: 0.4rem 0.8rem !important;
+                font-size: 0.9rem !important;
+            }
         }
-        
+
     </style>
 """, unsafe_allow_html=True)
 
