@@ -9,18 +9,36 @@ from ics import Calendar, Event
 import time
 import re
 
-# 1. 頁面基本設定
+# 1. 頁面基本設定 (UI 優化：設定 layout 為 wide)
 st.set_page_config(
     page_title="2026 書展排程神器",
     page_icon="📅",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
+# --- UI 美化 CSS ---
+# 去除 Streamlit 預設的上方大量空白，讓手機版面更緊湊
+st.markdown("""
+    <style>
+        .block-container {
+            padding-top: 1rem !important;
+            padding-bottom: 2rem !important;
+        }
+        /* 調整手機上的標題大小 */
+        h1 { font-size: 1.8rem !important; }
+        /* 隱藏預設的 footer */
+        footer {visibility: hidden;}
+    </style>
+""", unsafe_allow_html=True)
+
 # --- 設定區 ---
-# 🔥 關鍵修改：現在兩者都指向同一個 Google Sheet 檔案
-SHEET_NAME_MASTER = "2026國際書展行事曆" # 讀取活動資料
-SHEET_NAME_USER = "2026國際書展行事曆"   # 儲存使用者行程
+SHEET_NAME_MASTER = "2026國際書展行事曆" # 公用活動資料 (讀取用)
 WORKSHEETS_TO_LOAD = ["國際書展"]
+
+# 🔥 關鍵修改：使用者資料夾 ID (策略 A：一用戶一檔案)
+# 您的資料夾: https://drive.google.com/drive/u/0/folders/1s1RvDbNaEIhkybxknvIRknzFWlI-1NA0
+USER_DATA_FOLDER_ID = "1s1RvDbNaEIhkybxknvIRknzFWlI-1NA0" 
 
 # --- 初始化 Session State ---
 if "calendar_focus_date" not in st.session_state: st.session_state.calendar_focus_date = "2026-02-04" 
@@ -28,14 +46,13 @@ if "prev_selection_counts" not in st.session_state: st.session_state.prev_select
 if "user_id" not in st.session_state: st.session_state.user_id = ""
 if "user_pin" not in st.session_state: st.session_state.user_pin = ""
 if "is_logged_in" not in st.session_state: st.session_state.is_logged_in = False
+if "is_guest" not in st.session_state: st.session_state.is_guest = False # 新增訪客狀態
 if "saved_ids" not in st.session_state: st.session_state.saved_ids = []
 
-# --- 2. 連線與資料讀取 (公用資料) ---
-@st.cache_data(ttl=300)
-def load_master_data():
+# --- 連線功能 (GSpread Client) ---
+def get_gspread_client():
     scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
     try:
-        # 讀取 Secrets
         if "gcp_service_account" in st.secrets:
             creds_dict = dict(st.secrets["gcp_service_account"])
             if "private_key" in creds_dict:
@@ -43,14 +60,19 @@ def load_master_data():
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         else:
             creds = ServiceAccountCredentials.from_json_keyfile_name("secrets.json", scope)
-        
-        client = gspread.authorize(creds)
-        
-        try:
-            spreadsheet = client.open(SHEET_NAME_MASTER)
-        except gspread.SpreadsheetNotFound:
-            return None, f"找不到檔案：{SHEET_NAME_MASTER}"
+        return gspread.authorize(creds)
+    except:
+        return None
 
+# --- 2. 資料讀取 (公用資料) ---
+@st.cache_data(ttl=300)
+def load_master_data():
+    client = get_gspread_client()
+    if not client: return None, "連線失敗"
+
+    try:
+        spreadsheet = client.open(SHEET_NAME_MASTER)
+        
         all_frames = []
         STANDARD_COLS = ["日期", "時間", "活動名稱", "地點", "主講人", "主持人", "類型", "備註", "詳細內容"]
 
@@ -68,18 +90,13 @@ def load_master_data():
                     df.rename(columns={"講者": "主講人"}, inplace=True)
 
                 for col in STANDARD_COLS:
-                    if col not in df.columns:
-                        df[col] = "" 
+                    if col not in df.columns: df[col] = "" 
                 
                 df = df.fillna("")
-                
-                # ID 生成
                 df['id'] = df.apply(lambda x: f"{x['日期']}_{x['時間']}_{x['活動名稱']}", axis=1)
-                
                 all_frames.append(df)
             except Exception as e:
-                # 把這行加回去，方便後台除錯
-                print(f"Skipping {ws_name}: {e}")
+                print(f"Skipping {ws_name}: {e}") # 保留除錯訊息
                 pass
 
         if not all_frames: return pd.DataFrame(), "無資料"
@@ -89,55 +106,45 @@ def load_master_data():
     except Exception as e:
         return None, str(e)
 
-# --- 3. 使用者資料讀寫 (私用資料) ---
-def connect_to_user_sheet():
-    scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-    try:
-        if "gcp_service_account" in st.secrets:
-            creds_dict = dict(st.secrets["gcp_service_account"])
-            if "private_key" in creds_dict:
-                 creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
-        else:
-            creds = ServiceAccountCredentials.from_json_keyfile_name("secrets.json", scope)
-        client = gspread.authorize(creds)
-        # 這裡會開啟同一個檔案
-        spreadsheet = client.open(SHEET_NAME_USER)
-        return spreadsheet
-    except:
-        return None
-
-def get_user_schedule_sheet(spreadsheet, user_id, pin_code):
+# --- 3. 使用者資料存取 (策略 A：獨立檔案) ---
+def get_user_storage_file(client, user_id):
     """
-    取得使用者的行程分頁 (命名為: ID_行程)
+    在指定資料夾中尋找或建立使用者的獨立 Spreadsheet
+    檔名格式: 2026_TIBE_{user_id}
     """
+    # 移除特殊字元，確保檔名合法
     safe_id = re.sub(r'[^a-zA-Z0-9_\u4e00-\u9fa5]', '', str(user_id))
-    sheet_title = f"{safe_id}_行程" 
+    filename = f"2026_TIBE_{safe_id}"
     
     try:
-        sheet = spreadsheet.worksheet(sheet_title)
-        return sheet, "Success"
-    except gspread.WorksheetNotFound:
+        # 1. 嘗試直接開啟 (如果檔案已存在)
+        sh = client.open(filename)
+        return sh, "Existing"
+    except gspread.SpreadsheetNotFound:
+        # 2. 如果找不到，則在指定資料夾建立新檔案
         try:
-            # 建立新分頁
-            sheet = spreadsheet.add_worksheet(title=sheet_title, rows=100, cols=10)
-            headers = ["id", "日期", "時間", "活動名稱", "地點"] # 只存關鍵資料
-            sheet.update(range_name='A1', values=[headers])
-            return sheet, "Success"
+            # 注意：這裡使用 folder_id 參數將檔案建在特定資料夾
+            sh = client.create(filename, folder_id=USER_DATA_FOLDER_ID)
+            
+            # 初始化標題列
+            sh.sheet1.update(range_name='A1', values=[["id", "日期", "時間", "活動名稱", "地點"]])
+            return sh, "Created"
         except Exception as e:
-            return None, f"建立失敗: {e}"
+            return None, f"建立檔案失敗: {e}"
 
-def load_user_saved_ids(user_id, pin_code):
-    """讀取使用者已儲存的活動 ID"""
-    ss = connect_to_user_sheet()
-    if not ss: return []
+def load_user_saved_ids(user_id):
+    """讀取使用者雲端檔案中的 ID"""
+    client = get_gspread_client()
+    if not client: return []
     
-    sheet, msg = get_user_schedule_sheet(ss, user_id, pin_code)
-    if not sheet: return []
+    sh, status = get_user_storage_file(client, user_id)
+    if not sh: return []
     
     try:
-        data = sheet.get_all_values()
+        worksheet = sh.sheet1
+        data = worksheet.get_all_values()
         if len(data) < 2: return []
+        
         df = pd.DataFrame(data[1:], columns=data[0])
         if 'id' in df.columns:
             return df['id'].tolist()
@@ -145,25 +152,25 @@ def load_user_saved_ids(user_id, pin_code):
     except:
         return []
 
-def save_user_schedule_to_cloud(user_id, pin_code, selected_df):
-    """將目前的勾選清單存回雲端"""
-    ss = connect_to_user_sheet()
-    if not ss: return False, "連線失敗"
+def save_user_schedule_to_cloud(user_id, selected_df):
+    """將目前的勾選清單存回使用者的獨立檔案"""
+    client = get_gspread_client()
+    if not client: return False, "連線失敗"
     
-    sheet, msg = get_user_schedule_sheet(ss, user_id, pin_code)
-    if not sheet: return False, msg
+    sh, status = get_user_storage_file(client, user_id)
+    if not sh: return False, f"無法存取雲端檔案: {status}"
     
     try:
-        # 只存關鍵欄位，節省空間
+        worksheet = sh.sheet1
+        
         save_cols = ["id", "日期", "時間", "活動名稱", "地點"]
         valid_cols = [c for c in save_cols if c in selected_df.columns]
         df_to_save = selected_df[valid_cols]
         
-        # 轉成 List
         data = [df_to_save.columns.values.tolist()] + df_to_save.values.tolist()
         
-        sheet.clear()
-        sheet.update(range_name='A1', values=data)
+        worksheet.clear()
+        worksheet.update(range_name='A1', values=data)
         return True, "儲存成功"
     except Exception as e:
         return False, str(e)
@@ -201,39 +208,87 @@ def parse_datetime_range(date_str, time_str):
     except:
         return None, None
 
-# --- 主程式介面 ---
-
-# 1. 登入檢查
+# ==========================================
+# 登入頁面 (含訪客模式)
+# ==========================================
 if not st.session_state.is_logged_in:
     st.title("📅 2026 書展排程神器")
-    st.info("請先登入，系統將為您自動讀取並儲存專屬行程！")
     
-    with st.sidebar.form("login_form"):
-        st.header("🔐 用戶登入")
-        input_id = st.text_input("👤 暱稱", placeholder="例如: Kevin")
-        input_pin = st.text_input("🔑 密碼 (PIN)", type="password", placeholder="例如: 0000")
-        if st.form_submit_button("🚀 登入 / 註冊"):
-            if input_id and input_pin:
-                # 嘗試讀取雲端存檔
-                with st.spinner("正在讀取您的雲端行程..."):
-                    saved_ids = load_user_saved_ids(input_id, input_pin)
-                    st.session_state.saved_ids = saved_ids
-                    st.session_state.user_id = input_id
-                    st.session_state.user_pin = input_pin
-                    st.session_state.is_logged_in = True
+    # 兩欄佈局：左邊介紹，右邊登入框
+    intro_col, login_col = st.columns([0.6, 0.4])
+    
+    with intro_col:
+        st.markdown("""
+        ### 歡迎使用！
+        這是專為書展設計的排程小幫手。
+        
+        **功能特色：**
+        * ✅ **一鍵篩選**：依地點、類型快速找活動
+        * ✅ **自動排程**：勾選活動，自動生成週曆
+        * ✅ **雲端同步**：登入後可儲存您的專屬行程 (換手機也能看)
+        * ✅ **離線帶著走**：支援匯出手機行事曆 (.ics)
+        """)
+        st.info("💡 建議先以「訪客模式」試用，覺得好用再註冊儲存！")
+
+    with login_col:
+        with st.container(border=True):
+            st.subheader("🔐 用戶登入")
+            with st.form("login_form"):
+                input_id = st.text_input("👤 暱稱 / 帳號", placeholder="例如: Kevin")
+                # 這裡 PIN 碼暫時只做為簡單驗證，若要嚴格安全需搭配資料庫
+                input_pin = st.text_input("🔑 密碼 (PIN)", type="password", placeholder="自訂 4-6 碼")
+                
+                b1, b2 = st.columns(2)
+                with b1:
+                    submit = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True)
+            
+            # 訪客按鈕獨立於 Form 之外
+            if st.button("👀 免登入試用", use_container_width=True):
+                st.session_state.is_guest = True
+                st.session_state.user_id = "Guest"
+                st.session_state.is_logged_in = True
                 st.rerun()
-            else:
-                st.sidebar.error("請輸入暱稱與密碼")
+
+            if submit:
+                if input_id and input_pin:
+                    with st.spinner("正在讀取雲端行程..."):
+                        # 嘗試讀取
+                        saved_ids = load_user_saved_ids(input_id)
+                        st.session_state.saved_ids = saved_ids
+                        st.session_state.user_id = input_id
+                        st.session_state.user_pin = input_pin # 暫存 PIN 供未來擴充驗證用
+                        st.session_state.is_guest = False
+                        st.session_state.is_logged_in = True
+                    st.rerun()
+                else:
+                    st.error("請輸入暱稱與密碼")
     st.stop() 
 
-# 2. 登入後介面
-st.sidebar.success(f"Hi, {st.session_state.user_id}")
+# ==========================================
+# 主程式 (登入後)
+# ==========================================
+
+# 側邊欄：顯示用戶狀態
+with st.sidebar:
+    if st.session_state.is_guest:
+        st.warning("👀 目前為訪客模式")
+        st.caption("無法使用雲端儲存功能")
+    else:
+        st.success(f"👤 Hi, {st.session_state.user_id}")
+    
+    st.markdown("---")
+    if st.button("🚪 登出 / 結束試用", use_container_width=True):
+        st.session_state.is_logged_in = False
+        st.session_state.is_guest = False
+        st.session_state.user_id = ""
+        st.session_state.saved_ids = []
+        st.rerun()
 
 # 讀取 Master 資料
 raw_df, msg = load_master_data()
 
 if raw_df is None or raw_df.empty:
-    st.error(f"⚠️ 資料讀取失敗：{msg}")
+    st.error(f"⚠️ 系統維護中 (資料讀取失敗)：{msg}")
     st.stop()
 
 # 預處理
@@ -248,26 +303,20 @@ for _, row in proc_df.iterrows():
 proc_df['start_dt'] = start_list
 proc_df['end_dt'] = end_list
 
-# --- 側邊欄功能區 ---
-if st.sidebar.button("🚪 登出"):
-    st.session_state.is_logged_in = False
-    st.session_state.user_id = ""
-    st.session_state.saved_ids = []
-    st.rerun()
-
-# --- 全域變數：勾選 ID ---
+# 全域變數
 all_selected_ids = []
 current_selection_counts = {}
+
+# --- 標題區 ---
+st.title("📅 2026 書展排程神器")
+if st.session_state.is_guest:
+    st.caption("目前為試用模式，勾選資料將在關閉視窗後消失。如需長久保存，請登入使用。")
 
 # ==========================================
 # 區塊 1：活動清單與勾選 (上方)
 # ==========================================
-st.title("📅 2026 書展排程神器")
-st.markdown("上方勾選活動，下方即時預覽週曆！")
-
 st.subheader("1. 勾選活動 ✅")
 
-# 篩選器
 with st.expander("🔎 進階篩選 (地點/類型)", expanded=False):
     c_filter1, c_filter2, c_filter3 = st.columns(3)
     with c_filter1:
@@ -313,6 +362,7 @@ else:
                     "活動名稱": st.column_config.TextColumn("活動名稱", width="large"),
                     "地點": st.column_config.TextColumn("地點", width="medium"),
                     "主講人": st.column_config.TextColumn("主講人", width="medium"),
+                    # 隱藏欄位
                     "類型": None, "主持人": None, "詳細內容": None, "備註": None, "來源": None, 
                     "id": None, "start_dt": None, "end_dt": None, "日期": None
                 },
@@ -326,7 +376,6 @@ else:
             current_count = len(selected_rows)
             current_selection_counts[date_str] = current_count
             prev_count = st.session_state.prev_selection_counts.get(date_str, 0)
-            
             if current_count != prev_count:
                 st.session_state.calendar_focus_date = date_str
             
@@ -334,7 +383,6 @@ else:
                 all_selected_ids.extend(selected_rows['id'].tolist())
 
 st.session_state.prev_selection_counts = current_selection_counts
-
 st.markdown("---")
 
 # ==========================================
@@ -347,32 +395,32 @@ final_selected = proc_df[
     (proc_df['start_dt'].notnull())
 ]
 
-c_cal_head, c_cal_save = st.columns([0.8, 0.2])
+c_cal_head, c_cal_save = st.columns([0.7, 0.3])
 with c_cal_head:
     if len(final_selected) > 0:
         st.success(f"已顯示 {len(final_selected)} 場活動")
 with c_cal_save:
-    # 儲存到雲端按鈕
-    if st.button("💾 儲存到雲端", type="primary", use_container_width=True):
-        with st.spinner("正在同步資料..."):
-            success, s_msg = save_user_schedule_to_cloud(
-                st.session_state.user_id, 
-                st.session_state.user_pin, 
-                final_selected
-            )
-            if success:
-                st.toast("✅ 儲存成功！下次登入會自動讀取。")
-                st.session_state.saved_ids = final_selected['id'].tolist()
-            else:
-                st.error(f"儲存失敗: {s_msg}")
+    # 儲存按鈕邏輯
+    if st.session_state.is_guest:
+        st.button("💾 儲存 (訪客無法使用)", disabled=True, use_container_width=True)
+    else:
+        if st.button("💾 儲存到雲端", type="primary", use_container_width=True):
+            with st.spinner("正在同步資料至您的雲端檔案..."):
+                success, s_msg = save_user_schedule_to_cloud(
+                    st.session_state.user_id, 
+                    final_selected
+                )
+                if success:
+                    st.toast("✅ 儲存成功！檔案已更新。")
+                    st.session_state.saved_ids = final_selected['id'].tolist()
+                else:
+                    st.error(f"儲存失敗: {s_msg}")
 
 cal_events = []
 for _, row in final_selected.iterrows():
     bg_color = "#3788d8"
     if str(row['來源']) != "國際書展": bg_color = "#ff9f43"
-    
     event_title = f"{row['活動名稱']} @ {row['地點']}"
-    
     cal_events.append({
         "title": event_title,
         "start": row['start_dt'].isoformat(),
@@ -382,7 +430,6 @@ for _, row in final_selected.iterrows():
     })
 
 initial_view_date = st.session_state.calendar_focus_date
-
 calendar_options = {
     "initialView": "timeGridDay", 
     "initialDate": initial_view_date,
@@ -396,7 +443,6 @@ calendar_options = {
     "height": "650px", 
     "nowIndicator": True
 }
-
 calendar(events=cal_events, options=calendar_options, key=f"main_calendar_{initial_view_date}")
 
 st.markdown("---")
@@ -417,10 +463,8 @@ else:
         for _, row in final_selected.iterrows():
             e = Event()
             e.name = f"{row['活動名稱']} ({row['地點']})"
-            
             if row['start_dt']: e.begin = row['start_dt'] - timedelta(hours=8)
             if row['end_dt']: e.end = row['end_dt'] - timedelta(hours=8)
-                
             e.location = str(row['地點'])
             
             desc_parts = []
@@ -429,15 +473,11 @@ else:
             
             note = str(row['備註']).strip()
             detail = str(row['詳細內容']).strip()
-            
-            if detail:
-                desc_parts.append(f"\n📝 內容:\n{detail}")
-            elif note:
-                desc_parts.append(f"\n📝 備註: {note}")
+            if detail: desc_parts.append(f"\n📝 內容:\n{detail}")
+            elif note: desc_parts.append(f"\n📝 備註: {note}")
             
             e.description = "\n".join(desc_parts)
             cal_obj.events.add(e)
-        
         st.download_button("📅 匯出手機行事曆 (.ics)", data=cal_obj.serialize(), file_name="tibe_2026.ics", mime="text/calendar")
 
     # 2. CSV
@@ -460,5 +500,25 @@ else:
             txt_out += f"📍 {row['地點']}"
             if row['主講人']: txt_out += f" | 🗣️ {row['主講人']}"
             txt_out += "\n\n"
-        
         st.download_button("💬 複製文字行程", data=txt_out, file_name="tibe_text.txt", mime="text/plain")
+
+# ==========================================
+# 隱私權與資料聲明 (Footer)
+# ==========================================
+st.markdown("<br><br>", unsafe_allow_html=True)
+with st.expander("ℹ️ 隱私權與使用聲明 (Privacy Policy)", expanded=False):
+    st.markdown("""
+    **1. 資料儲存：**
+    * 本應用程式僅在您選擇「登入」並按下「儲存」時，才會將您的行程資料儲存至 Google Drive。
+    * 每個使用者的資料皆儲存於獨立的檔案中，不會與他人混淆。
+    
+    **2. 訪客模式：**
+    * 訪客模式下，您的所有操作僅保留在當前瀏覽器視窗中，關閉視窗後即自動清除，不會上傳至任何伺服器。
+    
+    **3. 免責聲明：**
+    * 本系統活動資料蒐集自書展官方網站與公開資訊，僅供參考。
+    * 活動時間、地點若有變動，請以主辦單位現場公告為準。
+    
+    **4. 專案資訊：**
+    * This app is a personal project designed for the 2026 Taipei International Book Exhibition.
+    """)
