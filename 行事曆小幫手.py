@@ -47,48 +47,59 @@ st.markdown("""
             color: #5C4B45 !important;
         }
 
-        /* --- 3. 側邊欄控制按鈕 (全時段固定顯示版) --- */
+        /* --- 3. 側邊欄控制按鈕 (全時段固定顯示 + 強制不隱藏) --- */
         
-        /* 同時選取「收合時的箭頭」與「展開時的叉叉」 */
+        /* 針對收合(箭頭)與展開(叉叉)兩種狀態 */
+        section[data-testid="stSidebar"] > div > div:nth-child(2), /* 針對某些版本的 sidebar header */
         [data-testid="stSidebarCollapsedControl"],
         [data-testid="stSidebarExpandedControl"] {
-            background-color: #FF8C69 !important; /* 珊瑚粉圓球 */
+            
+            /* 🔥 關鍵 1：強制顯示，不准淡出 */
+            opacity: 1 !important;
+            visibility: visible !important;
+            display: flex !important;
+            
+            /* 外觀設計 (珊瑚粉圓球) */
+            background-color: #FF8C69 !important; 
             color: white !important;
             border-radius: 50%;
             border: 2px solid #FFFFFF;
             box-shadow: 2px 2px 6px rgba(0,0,0,0.15);
             
-            /* 強制固定大小 */
+            /* 大小設定 */
             width: 3rem !important;
             height: 3rem !important;
             
-            /* 🔥 關鍵：強制固定位置 (Fixed) */
+            /* 🔥 關鍵 2：強制固定位置 (釘在左上角) */
             position: fixed !important;
             top: 1rem !important;
             left: 1rem !important;
             
-            /* 🔥 關鍵：層級設到最高，確保浮在側邊欄之上 */
+            /* 🔥 關鍵 3：層級最高，浮在所有內容之上 */
             z-index: 1000002 !important; 
             
-            /* 確保內容置中 */
-            display: flex !important;
+            /* 內容置中 */
             align-items: center !important;
             justify-content: center !important;
+            
+            /* 移除 Streamlit 預設的 hover 變透明動畫 */
+            transition: transform 0.2s !important; 
         }
 
-        /* 滑鼠移過去的效果 */
+        /* 滑鼠移過去的效果 (放大就好，不要閃爍) */
         [data-testid="stSidebarCollapsedControl"]:hover,
         [data-testid="stSidebarExpandedControl"]:hover {
             transform: scale(1.1);
             background-color: #FF7043 !important;
+            opacity: 1 !important; /* 再次確保 hover 時也是不透明 */
         }
         
-        /* 修正展開後的圖示大小 (原本的 X 可能會太小或歪掉) */
+        /* 修正圖示線條粗細，讓它在粉色底上更清楚 */
         [data-testid="stSidebarExpandedControl"] svg,
         [data-testid="stSidebarCollapsedControl"] svg {
-            width: 1.5rem !important;
-            height: 1.5rem !important;
-            stroke-width: 3px !important; /* 讓線條粗一點，比較清楚 */
+            width: 1.6rem !important;
+            height: 1.6rem !important;
+            stroke-width: 2.5px !important; 
         }
 
         /* --- 4. 修正深色元件 (針對您的截圖修正) --- */
