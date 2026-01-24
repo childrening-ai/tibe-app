@@ -542,9 +542,7 @@ st.title("📅 2026 書展排程神器")
 if st.session_state.is_guest:
     st.caption("訪客模式：資料不會儲存")
 
-# ==========================================
-# 區塊 1：活動清單與勾選 (邏輯修正版)
-# ==========================================
+# --- 1. 勾選活動 (優化版：提示與統計前置) ---
 st.subheader("1. 勾選活動 ✅")
 
 with st.expander("🔎 進階篩選", expanded=False):
@@ -570,11 +568,26 @@ else:
     
     for i, date_str in enumerate(unique_dates):
         with tabs[i]:
-            # 準備該日期的資料
-            day_df = filtered_df[filtered_df['日期'] == date_str].copy().sort_values(by='時間')
+            # --- 🔥 新增：狀態提示區塊 (放在表格正上方) ---
+            # 計算目前總共選了幾場
+            current_total = len(st.session_state.saved_ids)
             
-            # 根據全域 saved_ids 來決定是否勾選
-            # 這是關鍵：勾選狀態來自「全域記憶」，而非篩選結果
+            c_info, c_tip = st.columns([0.35, 0.65])
+            with c_info:
+                # 顯示已選數量 (使用珊瑚色強調)
+                st.markdown(
+                    f"<div style='color: #FF8C69; font-weight: bold; font-size: 1.1rem; padding-top: 5px;'>"
+                    f"📊 已安排：{current_total} 場"
+                    f"</div>", 
+                    unsafe_allow_html=True
+                )
+            with c_tip:
+                # 顯示操作教學
+                st.caption("💡 點選後請稍候，待畫面閃爍更新後，再勾選下一場。")
+            
+            # ---------------------------------------------
+
+            day_df = filtered_df[filtered_df['日期'] == date_str].copy().sort_values(by='時間')
             if "參加" not in day_df.columns:
                 day_df.insert(0, "參加", day_df['id'].isin(st.session_state.saved_ids))
             
@@ -593,34 +606,15 @@ else:
                 key=f"editor_{date_str}"
             )
             
-            # --- 🔥 關鍵邏輯修正：同步更新 saved_ids ---
-            # 我們不能只看 filter 後的結果，我們要「增量更新」
-            
-            # 1. 找出這個編輯器「當下顯示了哪些 ID」(Visible IDs)
             visible_ids = day_df['id'].tolist()
-            
-            # 2. 找出這個編輯器「當下被勾選的 ID」(Ticked IDs)
             ticked_ids = edited_day_df[edited_day_df["參加"] == True]['id'].tolist()
             
-            # 3. 更新全域 saved_ids
-            # 邏輯：
-            # A. 把現在有勾的，確保加入 saved_ids
-            # B. 把「本來有顯示」但「現在沒勾」的 (代表使用者取消了)，從 saved_ids 移除
-            #    (注意：不能移除「因為篩選而沒顯示」的 ID)
-            
             current_saved_set = set(st.session_state.saved_ids)
-            
-            # A. 加入新增的
             current_saved_set.update(ticked_ids)
-            
-            # B. 移除取消的 (只針對目前可見範圍)
             ids_to_remove = set(visible_ids) - set(ticked_ids)
             current_saved_set = current_saved_set - ids_to_remove
-            
-            # 寫回 Session State
             st.session_state.saved_ids = list(current_saved_set)
-
-            # (UI 優化) 計算勾選數以控制焦點
+            
             current_count = len(ticked_ids)
             current_selection_counts[date_str] = current_count
             if current_count != st.session_state.prev_selection_counts.get(date_str, 0):
@@ -629,30 +623,20 @@ else:
 st.session_state.prev_selection_counts = current_selection_counts
 st.markdown("---")
 
-# --- 2. 行程週曆 (邏輯修正版) ---
+# --- 2. 行程週曆 ---
 st.subheader("2. 行程週曆 🗓️")
 
-# 🔥 關鍵修改：日曆的資料來源不再受 filtered_df 影響
-# 而是直接從原始資料 (proc_df) 中抓取所有 saved_ids
-# 這樣就算上面的篩選器把活動藏起來了，下面的日曆依然會顯示
 final_selected = proc_df[
     (proc_df['id'].isin(st.session_state.saved_ids)) & 
     (proc_df['start_dt'].notnull())
 ]
 
-# ... 以下接原本的日曆顯示程式碼 ...
-
-# 顯示成功訊息 (如果有)
 if st.session_state.save_success_msg:
     st.markdown(f'<div class="success-box">✅ {st.session_state.save_success_msg}</div>', unsafe_allow_html=True)
-    # 顯示一次後清除，避免重整後還在 (需配合下次 rerun，這裡先暫留)
     st.session_state.save_success_msg = None 
 
-c_cal_head, c_cal_save = st.columns([0.7, 0.3])
-with c_cal_head:
-    if len(final_selected) > 0:
-        st.success(f"已顯示 {len(final_selected)} 場活動")
-
+# 直接放儲存按鈕，不分欄了，或者用空白欄位推到右邊
+_, c_save = st.columns([0.7, 0.3]) # 左邊留白
 with c_cal_save:
     if st.session_state.is_guest:
         st.button("💾 儲存 (訪客無法使用)", disabled=True, use_container_width=True)
