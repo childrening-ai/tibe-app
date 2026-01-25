@@ -498,9 +498,18 @@ st.sidebar.success(f"Hi, {st.session_state.user_id}")
 # (這裡移除了預算設定輸入框)
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 登出 / 結束試用", use_container_width=True):
+    # 1. 清除登入狀態
     st.session_state.is_logged_in = False
-    st.session_state.user_id = "" 
+    st.session_state.user_id = ""
     st.session_state.cart_data = pd.DataFrame()
+    
+    # 🔥 關鍵修正：把「已同步」的標記全部移除或重置！
+    if "synced_shopping" in st.session_state:
+        del st.session_state.synced_shopping
+    if "synced_calendar" in st.session_state:
+        del st.session_state.synced_calendar
+        
+    # 2. 重新整理
     st.rerun()
 
 st.title(f"📷 新增書籍資料")

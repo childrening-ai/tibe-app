@@ -559,11 +559,21 @@ with st.sidebar:
         st.success(f"👤 {st.session_state.user_id}")
     st.markdown("---")
     if st.button("🚪 登出 / 結束試用", use_container_width=True):
+        # 1. 清除登入狀態
         st.session_state.is_logged_in = False
         st.session_state.is_guest = False
         st.session_state.user_id = ""
         st.session_state.saved_ids = []
         st.session_state.save_success_msg = None
+        
+        # 🔥 關鍵修正：把「已同步」的標記全部移除或重置！
+        # 這樣下一個登入的人，才會被視為「尚未同步」，程式才會重新執行補登
+        if "synced_shopping" in st.session_state:
+            del st.session_state.synced_shopping
+        if "synced_calendar" in st.session_state:
+            del st.session_state.synced_calendar
+
+        # 2. 重新整理
         st.rerun()
 
 raw_df, msg = load_master_data()
