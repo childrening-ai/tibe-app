@@ -439,7 +439,7 @@ def parse_datetime_range(date_str, time_str):
     except:
         return None, None
 
-# --- 🔥 修正版：登入驗證函式 (新帳號會立刻寫入資料庫) ---
+# --- 🔥 修正版：登入驗證函式 (行事曆專用 - 含自動寫入功能) ---
 def check_login(user_id, input_pin):
     client = get_gspread_client()
     if not client: return False, [], "連線失敗"
@@ -449,7 +449,7 @@ def check_login(user_id, input_pin):
         ws = sh.worksheet(WORKSHEET_USERS_TAB)
         data = ws.get_all_values()
         
-        # 定義標準欄位 (確保跟 save_user_schedule_to_cloud 一致)
+        # 定義標準欄位
         HEADERS = ["User_ID", "Password", "ID", "日期", "時間", "活動名稱", "地點"]
         
         # 防呆：如果是空表，先補標題
@@ -470,11 +470,12 @@ def check_login(user_id, input_pin):
                 else:
                     return False, [], "⚠️ 密碼錯誤，或是此帳號已被他人使用！"
             else:
-                # --- 🔥 修正關鍵：新帳號 -> 立刻佔位寫入 ---
-                # 準備一列資料：[帳號, 密碼, 空白, 空白...]
-                # 我們只需要填前兩格，後面補空字串即可
+                # --- 🔥 這裡就是關鍵！新帳號要立刻寫入資料庫佔位 ---
+                # 準備一列資料：[帳號, 密碼, 空白...]
                 new_row = [str(user_id), str(input_pin)] + [""] * (len(HEADERS) - 2)
                 ws.append_row(new_row)
+                
+                # 回傳空清單 (因為新帳號還沒選過任何活動)
                 return True, [], "新帳號註冊成功"
         
         return False, [], "資料庫欄位錯誤"
