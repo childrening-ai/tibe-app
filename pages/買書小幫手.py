@@ -238,6 +238,12 @@ def load_user_cart(user_id):
             # 確保欄位存在
             for c in cols_to_keep:
                 if c not in user_df.columns: user_df[c] = ""
+            
+            # 🔥 關鍵修正：過濾掉「書名」為空的資料 (即過濾掉註冊時的佔位資料)
+            # 只有當「書名」有內容時，才算是一本真正的書
+            if "書名" in user_df.columns:
+                user_df = user_df[user_df["書名"].astype(str).str.strip() != ""]
+            
             return user_df[cols_to_keep]
         return pd.DataFrame()
     except:
