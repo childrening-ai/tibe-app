@@ -337,18 +337,19 @@ def analyze_image_robust(image):
         st.session_state.debug_ai_raw = f"Error: {str(e)}"
         return None
 
-# --- 加入購物車 Callback ---
+# --- 加入購物車 Callback (修正折數邏輯版) ---
 def submit_book_callback():
     val_title = st.session_state.get("in_title", "").strip()
     val_pub = st.session_state.get("in_pub", "").strip()
     val_price = st.session_state.get("in_price", 0.0)
-    val_discount = st.session_state.get("in_discount", 1.0)
+    val_discount = st.session_state.get("in_discount", 100) # 預設 100 (不打折)
     val_note = st.session_state.get("in_note", "").strip()
     
-    # 計算折扣價
+    # 計算折扣價 (邏輯修正：輸入 79 代表 79折)
     try:
         p = float(val_price)
-        calc_final = int(p * val_discount)
+        # 公式：價格 x (折數 / 100)
+        calc_final = int(p * (val_discount / 100))
     except:
         p = 0
         calc_final = 0
@@ -361,7 +362,7 @@ def submit_book_callback():
         "書名": val_title,
         "出版社": val_pub,
         "定價": p,
-        "折扣": val_discount,
+        "折數": val_discount, # 欄位名稱改成「折數」
         "折扣價": calc_final,
         "狀態": "待購", 
         "備註": val_note
@@ -373,14 +374,14 @@ def submit_book_callback():
     else:
         st.session_state.cart_data = pd.concat([st.session_state.cart_data, new_row], ignore_index=True)
     
-    # 🔥 修改：只有「非訪客」才寫入雲端
+    # 存檔與回饋
     if not st.session_state.get("is_guest", False):
         save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, st.session_state.cart_data)
-        st.toast(f"✅ 已加入並同步：{val_title}")
+        st.toast(f"🎉 加入成功：{val_title}", icon="✅") # 視覺回饋
     else:
-        st.toast(f"✅ 已暫存：{val_title} (訪客模式)")
+        st.toast(f"✅ 已暫存：{val_title} (訪客模式)", icon="👻")
     
-    # 清空輸入
+    # 清空輸入 (保留折數預設值，比較方便)
     st.session_state["in_title"] = ""
     st.session_state["in_pub"] = ""
     st.session_state["in_price"] = 0
@@ -532,13 +533,33 @@ with st.container(border=True):
             🔍 查博客來
             </button></a>''', unsafe_allow_html=True)
 
-    c3, c4, c5, c6 = st.columns(4)
+    c3, c4, c5, c6 = st.columns([1.2, 1, 1, 1.2]) # 調整欄位比例
     with c3: new_publisher = st.text_input("🏢 出版社", key="in_pub")
     with c4: new_price = st.number_input("💰 定價", min_value=0, step=10, key="in_price")
-    with c5: new_discount = st.selectbox("📉 折扣", options=[1.0, 0.79, 0.85, 0.9, 0.75, 0.66], index=1, format_func=lambda x: f"{int(x*100)}折" if x < 1 else "不打折", key="in_discount")
+    
+    # 🔥 修改 1：折數改為手動輸入整數 (例如 79)
+    with c5: 
+        new_discount = st.number_input("📉 折數", min_value=1, max_value=100, value=79, step=1, help="79折請輸入79", key="in_discount")
+    
+    # 🔥 修改 2：視覺化價格顯示 (珊瑚色卡片)
     with c6: 
-        calc_final = int(new_price * new_discount)
-        st.number_input("🏷️ 折扣後價格", value=calc_final, step=1, disabled=True)
+        calc_final = int(new_price * (new_discount / 100))
+        st.write("") # 為了對齊
+        st.markdown(
+            f"""
+            <div style="
+                background-color: #FFF3E0;
+                border: 2px solid #FF8C69;
+                border-radius: 10px;
+                text-align: center;
+                padding: 2px 0;
+            ">
+                <span style="font-size: 0.8rem; color: #E65100;">🏷️ 折後價</span><br>
+                <span style="font-size: 1.4rem; font-weight: bold; color: #BF360C;">${calc_final}</span>
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
         
     c7, c8 = st.columns([3, 1])
     with c7: new_note = st.text_input("📝 備註 (選填)", key="in_note")
@@ -554,58 +575,89 @@ st.markdown("---")
 st.subheader("📋 管理清單")
 
 if df.empty:
-    st.info("目前清單是空的。")
+    st.info("目前清單是空的，快去上面新增幾本吧！")
 else:
-    # 🔥 關鍵修改：在顯示前，產生一個臨時的流水號 ID，確保每一行都是獨一無二的
-    # 這樣刪除同樣書名的書時，不會把兩本都刪掉
     df_display = df.copy()
     
-    # 加入 checkbox
-    df_display.insert(0, "🗑️ 刪除", False)
+    # 🔥 修改 1：新增「No.」流水號 (從 1 開始)
+    # 這裡使用 range 產生 1, 2, 3...
+    df_display.insert(0, "No.", range(1, len(df_display) + 1))
     
-    # 顯示表格
+    # 加入刪除勾選框 (放在 No. 後面)
+    df_display.insert(1, "刪除", False)
+    
+    # 確保「折數」欄位存在 (相容舊資料)
+    if "折數" not in df_display.columns:
+        if "折扣" in df_display.columns:
+            # 如果是舊資料(小數點)，轉換成整數顯示 (0.79 -> 79)
+            df_display["折數"] = (df_display["折扣"] * 100).astype(int)
+        else:
+            df_display["折數"] = 100 # 預設不打折
+
+    # 🔥 修改 2：表格欄位寬度優化 (手機友善設定)
     edited_df = st.data_editor(
         df_display,
         use_container_width=True,
         num_rows="fixed",
         key="main_editor",
         column_config={
-            "🗑️ 刪除": st.column_config.CheckboxColumn("刪除", width="small"),
-            "書名": st.column_config.TextColumn("書名", width="large"),
-            "出版社": st.column_config.TextColumn("出版社", width="medium"),
+            "No.": st.column_config.NumberColumn("No.", width="small", disabled=True), # 唯讀流水號
+            "刪除": st.column_config.CheckboxColumn("刪", width="small"), # 縮短標題
+            # 書名給最大空間 (medium/large)，其他都設 small
+            "書名": st.column_config.TextColumn("書名", width="medium"), 
+            "出版社": st.column_config.TextColumn("出版社", width="small"),
             "定價": st.column_config.NumberColumn("定價", format="$%d", width="small"),
-            "折扣": st.column_config.NumberColumn("折扣", format="%.2f", width="small"),
-            "折扣價": st.column_config.NumberColumn("折扣價", format="$%d", width="small"),
+            
+            # 🔥 修改 3：折數可編輯 (1-100)
+            "折數": st.column_config.NumberColumn("折數", min_value=1, max_value=100, step=1, format="%d", width="small"),
+            
+            # 折扣價不讓改 (因為是算出來的)，設為 disabled 或是隱藏
+            "折扣價": st.column_config.NumberColumn("售價", format="$%d", width="small", disabled=True),
+            
             "狀態": st.column_config.SelectboxColumn(
                 "狀態",
-                options=["待購", "已購", "猶豫中", "放棄"],
-                width="medium",
+                options=["待購", "已購", "猶豫", "放棄"], # 縮短選項文字
+                width="small",
                 required=True
             ),
-            "備註": st.column_config.TextColumn("備註", width="medium"),
+            "備註": st.column_config.TextColumn("備註", width="small"),
+            "折扣": None # 隱藏舊欄位
         }
     )
     
     # 底部按鈕區
     btn_col1, btn_col2 = st.columns([1, 1])
     with btn_col1:
-        # 刪除邏輯：根據 index 刪除
-        rows_to_delete = edited_df[edited_df["🗑️ 刪除"] == True]
+        rows_to_delete = edited_df[edited_df["刪除"] == True]
         if len(rows_to_delete) > 0:
-            if st.button(f"🗑️ 刪除選取的 {len(rows_to_delete)} 本書", type="secondary", use_container_width=True):
-                # 利用 index 反向保留沒被勾選的
-                final_df = edited_df[edited_df["🗑️ 刪除"] == False].drop(columns=["🗑️ 刪除"])
+            if st.button(f"🗑️ 刪除 ({len(rows_to_delete)})", type="secondary", use_container_width=True):
+                # 刪除邏輯
+                final_df = edited_df[edited_df["刪除"] == False].drop(columns=["No.", "刪除"])
+                # 重新計算折扣價 (防止手動改了折數但價格沒變)
+                final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
+                
                 st.session_state.cart_data = final_df
-                save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, final_df)
+                
+                if not st.session_state.is_guest:
+                    save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, final_df)
+                
                 st.toast("已刪除！")
                 st.rerun()
                 
     with btn_col2:
-        if st.button("💾 儲存修改 (狀態/備註)", type="primary", use_container_width=True):
-            # 移除 checkbox 欄位後存檔
-            final_df = edited_df.drop(columns=["🗑️ 刪除"])
-            st.session_state.cart_data = final_df
-            if save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, final_df):
-                st.success("✅ 已同步到雲端！")
-                time.sleep(1)
-                st.rerun()
+        if st.session_state.is_guest:
+             st.button("💾 儲存 (訪客無法使用)", disabled=True, use_container_width=True)
+        else:
+            if st.button("💾 儲存修改", type="primary", use_container_width=True):
+                # 🔥 修改 4：加入轉圈圈動畫
+                with st.spinner("正在同步雲端..."):
+                    # 整理資料：移除 No. 和 刪除 欄位
+                    final_df = edited_df.drop(columns=["No.", "刪除"])
+                    # 重新計算折扣價 (因為使用者可能改了折數)
+                    final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
+                    
+                    st.session_state.cart_data = final_df
+                    if save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, final_df):
+                        st.success("✅ 儲存成功！")
+                        time.sleep(1)
+                        st.rerun()
