@@ -456,7 +456,7 @@ if not st.session_state.is_logged_in:
 st.sidebar.success(f"Hi, {st.session_state.user_id}")
 # (這裡移除了預算設定輸入框)
 st.sidebar.markdown("---")
-if st.sidebar.button("🚪 登出", use_container_width=True):
+if st.sidebar.button("🚪 登出 / 結束試用", use_container_width=True):
     st.session_state.is_logged_in = False
     st.session_state.user_id = "" 
     st.session_state.cart_data = pd.DataFrame()
