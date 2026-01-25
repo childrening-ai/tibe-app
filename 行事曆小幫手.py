@@ -439,7 +439,7 @@ def parse_datetime_range(date_str, time_str):
     except:
         return None, None
 
-# --- 新增：登入驗證函式 ---
+# --- 🔥 修正版：登入驗證函式 (新帳號會立刻寫入資料庫) ---
 def check_login(user_id, input_pin):
     client = get_gspread_client()
     if not client: return False, [], "連線失敗"
@@ -449,27 +449,35 @@ def check_login(user_id, input_pin):
         ws = sh.worksheet(WORKSHEET_USERS_TAB)
         data = ws.get_all_values()
         
-        if len(data) < 2: return True, [], "新帳號" # 空資料庫，直接當新帳號
+        # 定義標準欄位 (確保跟 save_user_schedule_to_cloud 一致)
+        HEADERS = ["User_ID", "Password", "ID", "日期", "時間", "活動名稱", "地點"]
         
+        # 防呆：如果是空表，先補標題
+        if not data:
+            ws.update(range_name='A1', values=[HEADERS])
+            data = [HEADERS]
+
         df = pd.DataFrame(data[1:], columns=data[0])
         
-        # 檢查是否有這個 User_ID
         if "User_ID" in df.columns:
             user_rows = df[df["User_ID"] == str(user_id)]
             
             if not user_rows.empty:
-                # 帳號存在，檢查密碼
+                # --- 舊帳號：檢查密碼 ---
                 stored_pin = str(user_rows.iloc[0]["Password"]).strip()
-                # 如果資料庫裡的密碼是空的 (舊資料)，或是密碼匹配
                 if stored_pin == "" or stored_pin == str(input_pin).strip():
                     return True, user_rows["ID"].tolist(), "登入成功"
                 else:
                     return False, [], "⚠️ 密碼錯誤，或是此帳號已被他人使用！"
             else:
-                # 帳號不存在 -> 新註冊
-                return True, [], "新帳號註冊"
+                # --- 🔥 修正關鍵：新帳號 -> 立刻佔位寫入 ---
+                # 準備一列資料：[帳號, 密碼, 空白, 空白...]
+                # 我們只需要填前兩格，後面補空字串即可
+                new_row = [str(user_id), str(input_pin)] + [""] * (len(HEADERS) - 2)
+                ws.append_row(new_row)
+                return True, [], "新帳號註冊成功"
         
-        return True, [], "資料庫格式重置"
+        return False, [], "資料庫欄位錯誤"
     except Exception as e:
         return False, [], f"系統錯誤: {e}"
 

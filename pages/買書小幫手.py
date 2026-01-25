@@ -169,7 +169,7 @@ def get_gspread_client():
         st.error(f"連線錯誤: {e}")
         return None
 
-# --- 🔥 新增：登入驗證函式 (含標題自動修復) ---
+# --- 🔥 修正版：登入驗證函式 (新帳號會立刻寫入資料庫) ---
 def check_login(user_id, input_pin):
     client = get_gspread_client()
     if not client: return False, "連線失敗"
@@ -177,43 +177,43 @@ def check_login(user_id, input_pin):
     try:
         spreadsheet = client.open(SHEET_NAME)
         
-        # 1. 嘗試取得分頁，若無則建立
+        # 1. 嘗試取得分頁
         try:
             ws = spreadsheet.worksheet(WORKSHEET_MASTER_CART)
         except gspread.WorksheetNotFound:
             ws = spreadsheet.add_worksheet(title=WORKSHEET_MASTER_CART, rows=1000, cols=20)
         
-        # 2. 🔥 防呆：檢查是否為空白分頁 (若無標題則自動補上)
+        # 2. 標題檢查與補全
         existing_data = ws.get_all_values()
         HEADERS = ["User_ID", "Password", "書名", "出版社", "定價", "折扣", "折扣價", "狀態", "備註"]
         
         if not existing_data:
-            # 完全空白 -> 補標題
             ws.update(range_name='A1', values=[HEADERS])
-            existing_data = [HEADERS] # 手動更新變數，讓後面邏輯繼續
-        elif existing_data[0] != HEADERS:
-            # 有資料但標題不對 (可選：視需求決定是否要強制修正，目前先不覆蓋以免誤刪)
-            pass
-
-        # 3. 開始驗證帳號
-        if len(existing_data) < 2: return True, "新帳號" # 只有標題，無內容
-
+            existing_data = [HEADERS]
+        
+        # 3. 驗證帳號
         df = pd.DataFrame(existing_data[1:], columns=existing_data[0])
         
-        if "User_ID" in df.columns:
-            user_rows = df[df["User_ID"] == str(user_id)]
+        # 確保有 User_ID 欄位
+        if "User_ID" not in df.columns:
+            return False, "資料庫格式錯誤 (缺 User_ID)"
+
+        user_rows = df[df["User_ID"] == str(user_id)]
             
-            if not user_rows.empty:
-                # 帳號存在，檢查密碼
-                stored_pin = str(user_rows.iloc[0]["Password"]).strip()
-                if stored_pin == "" or stored_pin == str(input_pin).strip():
-                    return True, "登入成功"
-                else:
-                    return False, "⚠️ 密碼錯誤，或是此帳號已被他人使用！"
+        if not user_rows.empty:
+            # --- 舊帳號：檢查密碼 ---
+            stored_pin = str(user_rows.iloc[0]["Password"]).strip()
+            if stored_pin == "" or stored_pin == str(input_pin).strip():
+                return True, "登入成功"
             else:
-                return True, "新帳號註冊"
+                return False, "⚠️ 密碼錯誤，或是此帳號已被他人使用！"
+        else:
+            # --- 🔥 修正關鍵：新帳號 -> 立刻佔位寫入 ---
+            # 準備一列資料：[帳號, 密碼, 空白, 空白...]
+            new_row = [str(user_id), str(input_pin)] + [""] * (len(HEADERS) - 2)
+            ws.append_row(new_row)
+            return True, "新帳號註冊成功"
         
-        return True, "資料庫格式重置"
     except Exception as e:
         return False, f"系統錯誤: {e}"
 
