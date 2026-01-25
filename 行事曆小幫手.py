@@ -595,18 +595,22 @@ else:
             if "參加" not in day_df.columns:
                 day_df.insert(0, "參加", day_df['id'].isin(st.session_state.saved_ids))
             
-            # 🔥 修改 1：定義固定的欄位顯示順序
-            cols_to_show = ["參加", "時間", "活動名稱", "地點", "主講人"]
+            # 🔥 修改 1：要把 "id" 加回來，不然程式抓不到是哪一場
+            cols_to_show = ["參加", "時間", "活動名稱", "地點", "主講人", "id"]
 
             edited_day_df = st.data_editor(
-                day_df[cols_to_show], # 🔥 修改 2：只傳入指定順序的欄位 (這樣就鎖定順序了)
+                day_df[cols_to_show], 
                 column_config={
                     "參加": st.column_config.CheckboxColumn("參加", width="small"),
-                    # 🔥 修改：加上 disabled=True 鎖住欄位
+                    
+                    # 鎖住資訊欄位
                     "時間": st.column_config.TextColumn("時間", width="small", disabled=True),
-                    "活動名稱": st.column_config.TextColumn("活動名稱", width="medium", disabled=True),
-                    "地點": st.column_config.TextColumn("地點", width="samll", disabled=True),
+                    "活動名稱": st.column_config.TextColumn("活動名稱", width="large", disabled=True),
+                    "地點": st.column_config.TextColumn("地點", width="medium", disabled=True),
                     "主講人": st.column_config.TextColumn("主講人", width="medium", disabled=True),
+                    
+                    # 🔥 修改 2：將 id 設為 None，讓它隱藏不顯示
+                    "id": None
                 },
                 hide_index=True,
                 key=f"editor_{date_str}"
