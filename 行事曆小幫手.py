@@ -712,6 +712,7 @@ st.markdown("---")
 
 # --- 3. 匯出功能 ---
 st.subheader("🎒 下載行事曆檔案 ")
+st.caption("ics檔可以匯入google行事曆，表格csv檔可以用 excel 或 google 表單開啟")
 if not final_selected.empty:
     c1, c2, c3 = st.columns(3)
     with c1:
