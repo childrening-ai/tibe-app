@@ -131,6 +131,7 @@ if "is_logged_in" not in st.session_state: st.session_state.is_logged_in = False
 if "budget" not in st.session_state: st.session_state.budget = 3000
 if "debug_ai_raw" not in st.session_state: st.session_state.debug_ai_raw = ""
 if "cart_data" not in st.session_state: st.session_state.cart_data = pd.DataFrame()
+if "is_guest" not in st.session_state: st.session_state.is_guest = False
 
 # --- 初始化 Gemini AI ---
 def configure_genai():
@@ -237,61 +238,68 @@ def load_user_cart(user_id):
     except:
         return pd.DataFrame()
 
-# --- 儲存功能 (配合新版資料庫結構) ---
+# --- 儲存功能 (修正 list index out of range 防呆版) ---
 def save_user_cart_to_cloud(user_id, user_pin, current_df):
     client = get_gspread_client()
     if not client: return False
     try:
         sh = client.open(SHEET_NAME)
-        # 使用全域變數 WORKSHEET_MASTER_CART (users)
         ws = sh.worksheet(WORKSHEET_MASTER_CART)
         
-        # 定義新版標準欄位 (含 User_ID 與 Password)
         TARGET_COLS = ["User_ID", "Password", "書名", "出版社", "定價", "折扣", "折扣價", "狀態", "備註"]
         
         # 讀取現有資料
         existing_data = ws.get_all_values()
         
-        # 建立乾淨的 DataFrame 用於處理
+        # 建立乾淨的 DataFrame (預設為空)
         df_clean = pd.DataFrame(columns=TARGET_COLS)
-        if existing_data:
-            # 簡單判斷第一列是否為標題
-            if str(existing_data[0][0]).strip() == "User_ID":
-                if len(existing_data) > 1:
-                    df_clean = pd.DataFrame(existing_data[1:], columns=TARGET_COLS)
-            else:
-                # 若無標題或標題錯誤，暫時略過舊資料結構處理，直接準備寫入
+        
+        # 🔥 關鍵修正：多重檢查，防止 index out of range
+        has_data = False
+        if existing_data and len(existing_data) > 0:
+            # 確保第一列真的有資料，而不是空 list []
+            if len(existing_data[0]) > 0:
+                # 檢查第一格是否為 User_ID (標題列)
+                if str(existing_data[0][0]).strip() == "User_ID":
+                    has_data = True
+
+        if has_data and len(existing_data) > 1:
+            # 有標題且有內容，才轉換為 DataFrame
+            # 使用 try-except 包裹 DataFrame 轉換，避免欄位數不符報錯
+            try:
+                df_clean = pd.DataFrame(existing_data[1:], columns=TARGET_COLS)
+            except ValueError:
+                # 如果欄位對不上 (例如 Sheet 有 8 欄，程式要 9 欄)，就強制只取前幾欄或重置
+                # 這裡選擇簡單策略：若格式亂掉，視為舊資料不可用，只保留標題重寫
                 pass
 
-        # 1. 準備要寫入的「當前使用者」新資料
+        # 1. 準備要寫入的新資料
         new_records = current_df.copy()
         new_records["User_ID"] = str(user_id)
         new_records["Password"] = str(user_pin)
         
-        # 補齊可能缺少的欄位 (防呆)
+        # 補齊欄位
         for col in TARGET_COLS:
             if col not in new_records.columns: new_records[col] = ""
-        # 確保欄位順序正確
         new_records = new_records[TARGET_COLS]
 
-        # 2. 保留「其他人」的資料 (從總表中剔除 當前使用者 的舊資料)
+        # 2. 保留「其他人」的資料
         if not df_clean.empty:
-            # 這裡邏輯是：留下 User_ID 不等於 我的資料
             df_keep = df_clean[df_clean["User_ID"].astype(str) != str(user_id)]
         else:
             df_keep = pd.DataFrame(columns=TARGET_COLS)
 
-        # 3. 合併 (其他人的資料 + 我的新資料)
+        # 3. 合併
         df_final = pd.concat([df_keep, new_records], ignore_index=True)
-        df_final = df_final.fillna("")
+        df_final = df_final.fillna("") # 再次確保沒有 NaN
         
-        # 4. 寫回 Google Sheet
+        # 4. 寫回
         final_values = [TARGET_COLS] + df_final.values.tolist()
         ws.clear()
         ws.update(range_name='A1', values=final_values)
         return True
     except Exception as e:
-        st.error(f"儲存失敗: {e}")
+        st.error(f"儲存失敗: {str(e)}") # 印出更詳細的錯誤
         return False
 
 # --- 🔥 強力 AI 解析函式 (維持不變) ---
@@ -365,10 +373,13 @@ def submit_book_callback():
     else:
         st.session_state.cart_data = pd.concat([st.session_state.cart_data, new_row], ignore_index=True)
     
-    # 立即存檔
-    save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, st.session_state.cart_data)
+    # 🔥 修改：只有「非訪客」才寫入雲端
+    if not st.session_state.get("is_guest", False):
+        save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, st.session_state.cart_data)
+        st.toast(f"✅ 已加入並同步：{val_title}")
+    else:
+        st.toast(f"✅ 已暫存：{val_title} (訪客模式)")
     
-    st.toast(f"✅ 已加入：{val_title}")
     # 清空輸入
     st.session_state["in_title"] = ""
     st.session_state["in_pub"] = ""
@@ -400,6 +411,14 @@ if not st.session_state.is_logged_in:
                 st.caption("※ 若暱稱是第一次使用，系統將自動以此密碼註冊。")
                 submit = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True)
             
+            # 🔥 新增：訪客按鈕
+            if st.button("👀 免登入試用 (資料不保留)", use_container_width=True):
+                st.session_state.is_guest = True
+                st.session_state.user_id = "Guest"
+                st.session_state.cart_data = pd.DataFrame() # 訪客從空清單開始
+                st.session_state.is_logged_in = True
+                st.rerun()
+
             if submit:
                 if input_id and input_pin:
                     with st.spinner("驗證中..."):
