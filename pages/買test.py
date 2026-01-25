@@ -13,81 +13,28 @@ from PIL import Image
 st.set_page_config(page_title="買書小幫手", page_icon="📚", layout="wide")
 
 # ==========================================
-# 🎨 UI 美化工程 (暖陽珊瑚風格 + 手機版面強制並排)
+# 🎨 UI 美化工程 (暖陽珊瑚風格 - 手機並排終極版)
 # ==========================================
 st.markdown("""
     <style>
         /* --- 1. 全域設定 --- */
-        .stApp {
-            background-color: #FFFFFF;
-            color: #4A4A4A;
-        }
+        .stApp { background-color: #FFFFFF; color: #4A4A4A; }
+        .block-container { padding-top: 3.5rem !important; padding-bottom: 5rem !important; }
+        [data-testid="stElementToolbar"] { display: none !important; }
+        footer { visibility: hidden; }
         
-        /* 修正手機版面頂部間距 */
-        .block-container {
-            padding-top: 3.5rem !important;
-            padding-bottom: 5rem !important;
-        }
-        h1 { font-size: 1.8rem !important; color: #4A4A4A !important; font-weight: 700 !important; }
-        h2, h3 { color: #5C4B45 !important; }
-        
-        /* --- 2. 側邊欄設計 --- */
+        /* --- 2. 側邊欄設計 (維持原樣) --- */
         [data-testid="stSidebar"] {
             background-color: #FFF9F0;
             border-right: 2px solid #F3E5D8;
         }
-        [data-testid="stSidebar"] p, [data-testid="stSidebar"] span, [data-testid="stSidebar"] label {
-            color: #5C4B45 !important;
-        }
-
-        /* --- 3. 側邊欄控制按鈕 (固定圓球版) --- */
         [data-testid="stSidebarCollapsedControl"] {
             background-color: #FF8C69 !important;
             border-radius: 50% !important;
-            width: 45px !important;
-            height: 45px !important;
-            left: 15px !important;
-            top: 15px !important;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            position: fixed !important; 
-            z-index: 999999 !important;
-            visibility: visible !important;
-            opacity: 1 !important;
-        }
-        [data-testid="stSidebarCollapsedControl"] svg {
             fill: white !important;
-            transform: scale(1.3) !important;
-        }
-        [data-testid="stSidebarCollapsedControl"]:hover {
-            background-color: #FF7043 !important;
-            transform: scale(1.1);
         }
 
-        /* --- 4. 元件美化 --- */
-        .stMultiSelect span[data-baseweb="tag"] {
-            background-color: #FFE0B2 !important; 
-            color: #BF360C !important;
-        }
-        [data-testid="stDataFrame"] th {
-            background-color: #FFEEE0 !important; 
-            color: #4A4A4A !important; 
-            font-size: 1rem !important;
-        }
-        
-        /* 輸入框圓角 */
-        .stTextInput input, .stSelectbox div[data-baseweb="select"], .stNumberInput input {
-            border-radius: 12px !important;
-            border: 1px solid #FFCCBC !important;
-        }
-        .stTextInput input:focus, .stNumberInput input:focus {
-            border-color: #FF8C69 !important;
-            box-shadow: 0 0 0 2px rgba(255, 140, 105, 0.2) !important;
-        }
-
-        /* --- 5. 按鈕設計 --- */
+        /* --- 3. 按鈕設計 (維持原樣) --- */
         .stButton > button {
             border-radius: 25px !important;
             font-weight: bold;
@@ -99,62 +46,66 @@ st.markdown("""
             background-color: #FF8C69 !important;
             color: white !important;
             border: none !important;
-            box-shadow: 0 4px 6px rgba(255, 140, 105, 0.3);
-        }
-
-        /* --- 6. 登入框與提示框 --- */
-        [data-testid="stForm"] {
-            background-color: #FFFCF8;
-            border: 2px solid #FFF0E0;
-            border-radius: 20px;
-            padding: 2rem;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-        }
-        
-        /* 隱藏 Footer */
-        footer {visibility: hidden;}
-
-        /* --- 7. 隱藏 DataEditor 內建功能列 --- */
-        [data-testid="stElementToolbar"] {
-            display: none !important;
         }
 
         /* ============================================================
-           🔥 關鍵修正：手機版強制並排與緊湊化 (Mobile Optimization)
+           🔥 4. 手機版面強制優化 (保留圓角風格，但強制擠在同一行)
            ============================================================ */
-        
-        /* 1. 解除欄位的最小寬度限制，讓它們可以在手機上擠在一起 (不會變成垂直堆疊) */
-        [data-testid="column"] {
+
+        /* 強制 Column 並排，禁止堆疊 */
+        div[data-testid="column"] {
+            display: inline-block !important; /* 強制行內顯示 */
             width: auto !important;
-            flex: 1 1 auto !important;
-            min-width: 1px !important; 
-        }
-        
-        /* 2. 隱藏 Number Input 的加減按鈕，並縮小內距 */
-        div[data-testid="stNumberInput"] button { display: none; }
-        div[data-testid="stNumberInput"] input { 
-            text-align: center; 
-            padding: 0px 2px !important; 
+            flex: 1 !important;
+            min-width: 0px !important; /* 允許縮到極小 */
+            vertical-align: top !important; /* 對齊頂部 */
+            padding: 0 2px !important; /* 減少左右間距 */
         }
 
-        /* 3. 極致縮小卡片內的垂直間距 */
+        /* 輸入框樣式：找回原本的圓角與橘色框，但縮小內距以適應手機 */
+        div[data-testid="stTextInput"] input, 
+        div[data-testid="stNumberInput"] input {
+            border-radius: 8px !important; /* 圓角 */
+            border: 1px solid #FFCCBC !important; /* 淺橘框 */
+            background-color: #FFFCF8 !important; /* 極淡橘底 */
+            padding: 0px 5px !important; /* 縮小內距 */
+            font-size: 0.95rem !important;
+            height: auto !important;
+            min-height: 35px !important;
+        }
+        
+        /* 輸入框聚焦時 */
+        div[data-testid="stTextInput"] input:focus, 
+        div[data-testid="stNumberInput"] input:focus {
+            border-color: #FF8C69 !important;
+            box-shadow: 0 0 0 1px rgba(255, 140, 105, 0.2) !important;
+        }
+
+        /* 隱藏 Number Input 加減按鈕 (節省空間) */
+        div[data-testid="stNumberInput"] button { display: none; }
+        div[data-testid="stNumberInput"] input { text-align: center; }
+
+        /* 極致壓縮垂直間距 */
         div[data-testid="stVerticalBlock"] > div {
-            gap: 0.2rem !important; 
+            gap: 0.3rem !important;
         }
         
-        /* 4. 調整 Checkbox 樣式，讓它不佔太多垂直空間 */
-        div[data-testid="stCheckbox"] {
-            margin-bottom: -15px !important; 
-            min-height: 0px !important;
+        /* 標籤 (Label) 樣式 - 配合 Python 中的 HTML */
+        .custom-label {
+            font-size: 0.8rem;
+            color: #E65100; /* 深橘色文字 */
+            font-weight: bold;
+            margin-bottom: 2px;
+            display: block;
         }
-        div[data-testid="stCheckbox"] label {
-            min-height: 0px !important;
-        }
-        
-        /* 5. 調整 Text Input 的 placeholder 顏色與內距 */
-        input::placeholder {
-            color: #bbb !important;
-            font-size: 0.9rem;
+
+        /* 卡片容器樣式 */
+        div[data-testid="stVerticalBlockBorderWrapper"] {
+            border: 1px solid #FFE0B2 !important; /* 橘色邊框 */
+            background-color: #fff;
+            border-radius: 12px !important;
+            padding: 12px !important;
+            margin-bottom: 12px;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -640,56 +591,65 @@ else:
     updated_rows = []
     indices_to_delete = []
 
-    # 🔥 核心修改：使用迴圈產生「強制並排卡片」
+    # 🔥 核心修改：模擬表格排版 (Table-Like Layout)
     for i, row in df.iterrows():
         with st.container(border=True):
             
-            # --- 第一行：[刪除] (極窄) ｜ [已購] (寬) ---
-            # 比例設為 [0.25, 0.75] 讓刪除只佔一點點位置
-            c1_1, c1_2 = st.columns([0.25, 0.75]) 
+            # --- Row 1: 狀態列 ---
+            # 左邊是刪除，右邊是已購 (置右)
+            c1_1, c1_2 = st.columns([0.3, 0.7]) 
             with c1_1:
-                is_del = st.checkbox("刪", key=f"del_{i}") # 標題改一個字"刪"省空間
+                is_del = st.checkbox("刪除", key=f"del_{i}")
                 if is_del: indices_to_delete.append(i)
             with c1_2:
-                # 使用 HTML 自訂標籤讓 Checkbox 靠左對齊且緊湊
+                # 使用 HTML 讓 Checkbox 往右靠，增加視覺層次
+                st.markdown('<div style="text-align: right;">', unsafe_allow_html=True)
                 is_bought = st.checkbox("✅ 已購", value=(row["狀態"] == "已購"), key=f"status_{i}")
+                st.markdown('</div>', unsafe_allow_html=True)
                 new_status = "已購" if is_bought else "待購"
 
-            # --- 第二行：書名 (70%) ｜ 出版社 (30%) ---
-            c2_1, c2_2 = st.columns([7, 3]) 
-            with c2_1:
-                new_title = st.text_input("書名", value=str(row["書名"]), label_visibility="collapsed", placeholder="書名", key=f"title_{i}")
-            with c2_2:
-                new_pub = st.text_input("出版社", value=str(row["出版社"]), label_visibility="collapsed", placeholder="出版社", key=f"pub_{i}")
+            st.markdown("<hr style='margin: 5px 0; border: 0; border-top: 1px dashed #eee;'>", unsafe_allow_html=True)
 
-            # --- 第三行：原價 ｜ 折數 ｜ 售價 ---
-            # 比例 [1, 1, 1.2]
+            # --- Row 2: 書名與出版社 (強制並排) ---
+            # 比例 2:1
+            c2_1, c2_2 = st.columns([2, 1]) 
+            with c2_1:
+                st.markdown('<span class="custom-label">書名</span>', unsafe_allow_html=True)
+                new_title = st.text_input("書名", value=str(row["書名"]), label_visibility="collapsed", key=f"title_{i}")
+            with c2_2:
+                st.markdown('<span class="custom-label">出版社</span>', unsafe_allow_html=True)
+                new_pub = st.text_input("出版社", value=str(row["出版社"]), label_visibility="collapsed", key=f"pub_{i}")
+
+            # --- Row 3: 價格數據區 (強制並排) ---
+            # 比例 1:1:1.2
             c3_1, c3_2, c3_3 = st.columns([1, 1, 1.2])
             
             with c3_1:
-                # 只有 placeholder，沒有 label
-                new_price = st.number_input("原價", value=int(row["定價"]), min_value=0, step=1, label_visibility="collapsed", placeholder="原價", key=f"price_{i}")
+                st.markdown('<span class="custom-label">原價</span>', unsafe_allow_html=True)
+                new_price = st.number_input("原價", value=int(row["定價"]), min_value=0, step=1, label_visibility="collapsed", key=f"price_{i}")
             
             with c3_2:
-                new_discount = st.number_input("折數", value=int(row["折數"]), min_value=1, max_value=100, step=1, label_visibility="collapsed", placeholder="折", key=f"disc_{i}")
+                st.markdown('<span class="custom-label">折數</span>', unsafe_allow_html=True)
+                new_discount = st.number_input("折數", value=int(row["折數"]), min_value=1, max_value=100, step=1, label_visibility="collapsed", key=f"disc_{i}")
             
             with c3_3:
                 current_calc = int(new_price * (new_discount / 100))
-                # 使用 HTML 顯示售價，字體調小一點以免換行
+                # 售價直接用顯示的，不用輸入框，視覺上區隔開來
                 st.markdown(
                     f"""
-                    <div style="text-align: right; padding-top: 5px;">
-                        <span style="font-size: 0.8rem; color: #888;">售</span>
-                        <b style="font-size: 1.1rem; color: #D32F2F;">${current_calc}</b>
+                    <span class="custom-label" style="color:#d32f2f;">售價</span>
+                    <div style="font-size: 1.1rem; font-weight: bold; color: #D32F2F; border-bottom: 1px solid #eee; padding-bottom: 2px;">
+                        ${current_calc}
                     </div>
                     """, 
                     unsafe_allow_html=True
                 )
 
-            # --- 第四行：備註 ---
-            new_note = st.text_input("備註", value=str(row["備註"]), placeholder="備註...", label_visibility="collapsed", key=f"note_{i}")
+            # --- Row 4: 備註 (獨立一行) ---
+            st.markdown('<span class="custom-label">備註</span>', unsafe_allow_html=True)
+            new_note = st.text_input("備註", value=str(row["備註"]), label_visibility="collapsed", key=f"note_{i}")
 
-            # 收集資料 (這段保持不變，配合您的刪除邏輯)
+            # 收集資料
             if not is_del:
                 updated_rows.append({
                     "書名": new_title,
