@@ -400,6 +400,8 @@ def submit_book_callback():
     st.session_state["in_price"] = 0
     st.session_state["in_note"] = ""
 
+has_ai = configure_genai()
+
 # ==========================================
 # 登入頁面 (垂直排列版)
 # ==========================================
