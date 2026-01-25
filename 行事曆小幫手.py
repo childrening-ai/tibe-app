@@ -237,6 +237,9 @@ st.markdown("""
             box-shadow: none !important;
             opacity: 1 !important;
         }
+        
+        /* 隱藏 DataEditor 右上角的搜尋/放大功能列 */
+        [data-testid="stElementToolbar"] { display: none !important; }
 
     </style>
 """, unsafe_allow_html=True)
