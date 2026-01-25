@@ -574,7 +574,7 @@ st.subheader("📋 願望書單")
 if df.empty:
     st.info("目前書單是空的，快點開上面「新增書籍」加入第一本書吧！")
 else:
-    # 🔥 統計資訊列 (只顯示數量與花費，並調整為置中均分)
+    # 統計資訊列
     st.markdown(
         f"""
         <div style="
@@ -598,26 +598,33 @@ else:
 
     df_display = df.copy()
     
-    # 加入刪除勾選框
+    # 1. 資料轉換：建立「已購」勾選欄位 (將文字轉為 True/False)
+    df_display["已購"] = df_display["狀態"] == "已購"
+    
+    # 2. 插入刪除欄位
     df_display.insert(0, "刪除", False)
+    
+    # 3. 🔥 關鍵修改：強制定義欄位顯示順序 (已購放在刪除與書名中間)
+    cols_to_show = ["刪除", "已購", "書名", "出版社", "定價", "折數", "折扣價", "備註"]
     
     # 表格設定
     edited_df = st.data_editor(
-        df_display,
+        df_display[cols_to_show], # 只傳入指定順序的欄位
         use_container_width=True,
         num_rows="fixed",
         hide_index=True, 
         key="main_editor",
         column_config={
             "刪除": st.column_config.CheckboxColumn("刪", width="small"),
+            # 🔥 修改：改為 Checkbox，標題設為 "已購"
+            "已購": st.column_config.CheckboxColumn("已購", width="small"), 
             "書名": st.column_config.TextColumn("書名", width="medium"),
             "出版社": st.column_config.TextColumn("出版社", width="small"),
             "定價": st.column_config.NumberColumn("定價", format="$%d", width="small"),
             "折數": st.column_config.NumberColumn("折數", min_value=1, max_value=100, step=1, format="%d", width="small"),
             "折扣價": st.column_config.NumberColumn("售價", format="$%d", width="small", disabled=True),
-            "狀態": st.column_config.SelectboxColumn("狀態", options=["待購", "已購", "猶豫", "放棄"], width="small", required=True),
+            # "狀態" 欄位已不再顯示，改用 "已購"
             "備註": st.column_config.TextColumn("備註", width="small"),
-            "折扣": None
         }
     )
     
@@ -627,7 +634,16 @@ else:
         rows_to_delete = edited_df[edited_df["刪除"] == True]
         if len(rows_to_delete) > 0:
             if st.button(f"🗑️ 刪除 ({len(rows_to_delete)})", type="secondary", use_container_width=True):
-                final_df = edited_df[edited_df["刪除"] == False].drop(columns=["刪除"])
+                # 這裡要小心，edited_df 現在是用我們自定義的欄位順序
+                # 先取出沒被刪除的資料
+                kept_data = edited_df[edited_df["刪除"] == False].copy()
+                
+                # 4. 存檔前轉換：把「已購 (True/False)」轉回「狀態 (已購/待購)」
+                kept_data["狀態"] = kept_data["已購"].apply(lambda x: "已購" if x else "待購")
+                
+                # 移除暫時的欄位，還原成資料庫格式
+                final_df = kept_data.drop(columns=["刪除", "已購"])
+                
                 # 重算價格
                 final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
                 
@@ -643,7 +659,15 @@ else:
         else:
             if st.button("💾 儲存到雲端", type="primary", use_container_width=True):
                 with st.spinner("正在同步..."):
-                    final_df = edited_df.drop(columns=["刪除"])
+                    # 取得編輯後的資料
+                    current_edit = edited_df.copy()
+                    
+                    # 4. 存檔前轉換：把「已購 (True/False)」轉回「狀態 (已購/待購)」
+                    current_edit["狀態"] = current_edit["已購"].apply(lambda x: "已購" if x else "待購")
+                    
+                    # 移除暫時的欄位
+                    final_df = current_edit.drop(columns=["刪除", "已購"])
+                    
                     # 強制重算價格
                     final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
                     
