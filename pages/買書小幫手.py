@@ -461,34 +461,15 @@ if not st.session_state.is_logged_in:
     st.stop()
 
 # ==========================================
-# 🔥 除錯模式：跨頁面同步測試
+# 🔥 安全性修補：跨頁面資料庫同步機制
 # ==========================================
-# 1. 先確認是否已登入
-if st.session_state.is_logged_in:
+# 如果使用者是登入狀態，但還沒在「這個 App」確認過資料庫，就強制執行一次 check_login
+if st.session_state.is_logged_in and not st.session_state.get("synced_shopping", False):
+    # 靜默同步：使用 session 中儲存的帳號密碼，去資料庫跑一次驗證/註冊流程
+    check_login(st.session_state.user_id, st.session_state.user_pin)
     
-    # 2. 檢查同步標記是否存在
-    has_synced = st.session_state.get("synced_shopping", False)
-    
-    # 顯示除錯訊息 (這會在右下角跳出小視窗)
-    # st.toast(f"目前狀態：已登入, 同步標記={has_synced}")
-
-    if not has_synced:
-        st.toast("🚀 發現未同步！正在嘗試寫入買書資料庫...", icon="⏳")
-        
-        # 3. 執行寫入，並捕捉結果
-        # 注意：這裡我把錯誤印出來，而不是藏起來
-        try:
-            # 呼叫 check_login (確保函式內有 append_row)
-            success, msg = check_login(st.session_state.user_id, st.session_state.user_pin)
-            
-            if success:
-                st.toast(f"✅ 同步成功！訊息：{msg}", icon="🎉")
-                st.session_state.synced_shopping = True
-            else:
-                st.error(f"❌ 同步失敗，資料庫拒絕寫入：{msg}")
-                
-        except Exception as e:
-            st.error(f"💥 程式崩潰，錯誤原因：{str(e)}")
+    # 標記已同步，避免每次重整都重跑
+    st.session_state.synced_shopping = True
 
 
 # ==========================================
