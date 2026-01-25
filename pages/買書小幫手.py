@@ -400,54 +400,62 @@ def submit_book_callback():
 # ==========================================
 has_ai = configure_genai()
 
+# ==========================================
+# 登入頁面 (垂直排列版)
+# ==========================================
 if not st.session_state.is_logged_in:
     st.title("📚 買書小幫手")
-    intro_col, login_col = st.columns([0.6, 0.4])
-    with intro_col:
-        st.markdown("""
+    
+    # 1. 上方：歡迎文字 (直接寫，不用包在 column 裡)
+    st.markdown("""
         ### 歡迎使用！
         **功能**
         * AI拍照自動填寫書籍資料
         * 建立帳號可隨時儲存與修改書單
         * 支援匯出文字或表格檔案
         """)
-    with login_col:
-        with st.container(border=True):
-            st.subheader("🔐 用戶登入")
-            with st.form("login_form"):
-                input_id = st.text_input("👤 帳號", placeholder="限輸入英文或數字")
-                input_pin = st.text_input("🔑 密碼", type="password", placeholder="限輸入英文或數字")
-                st.caption("※ 若帳號是第一次使用，系統將自動以此密碼註冊。")
-                submit = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True)
-            
-            # 🔥 新增：訪客按鈕
-            if st.button("👀 免登入試用", use_container_width=True):
-                st.session_state.is_guest = True
-                st.session_state.user_id = "Guest"
-                st.session_state.cart_data = pd.DataFrame() # 訪客從空清單開始
-                st.session_state.is_logged_in = True
-                st.rerun()
+    
+    # 2. 下方：登入卡片 (直接接在下面)
+    with st.container(border=True):
+        st.subheader("🔐 用戶登入")
+        
+        # --- 表單區塊 ---
+        with st.form("login_form"):
+            input_id = st.text_input("👤 帳號", placeholder="限輸入英文或數字")
+            input_pin = st.text_input("🔑 密碼", type="password", placeholder="限輸入英文或數字")
+            st.caption("※ 若帳號是第一次使用，系統將自動以此密碼註冊。")
+            submit = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True)
+        
+        # --- 訪客按鈕 (記得放在 form 外面) ---
+        st.write("") # 加一點間距讓排版不擁擠
+        if st.button("👀 免登入試用", use_container_width=True):
+            st.session_state.is_guest = True
+            st.session_state.user_id = "Guest"
+            st.session_state.cart_data = pd.DataFrame() # 訪客從空清單開始
+            st.session_state.is_logged_in = True
+            st.rerun()
 
-            if submit:
-                if input_id and input_pin:
-                    with st.spinner("驗證中..."):
-                        is_valid, msg = check_login(input_id, input_pin)
+        # --- 登入驗證邏輯 ---
+        if submit:
+            if input_id and input_pin:
+                with st.spinner("驗證中..."):
+                    is_valid, msg = check_login(input_id, input_pin)
+                    
+                    if is_valid:
+                        # 登入成功，讀取資料
+                        st.session_state.user_id = input_id
+                        st.session_state.user_pin = input_pin
+                        st.session_state.cart_data = load_user_cart(input_id)
                         
-                        if is_valid:
-                            # 登入成功，讀取資料
-                            st.session_state.user_id = input_id
-                            st.session_state.user_pin = input_pin
-                            st.session_state.cart_data = load_user_cart(input_id)
-                            
-                            # 🔥 關鍵修正：登入成功後，強制關閉訪客模式
-                            st.session_state.is_guest = False 
-                            
-                            st.session_state.is_logged_in = True
-                            st.rerun()
-                        else:
-                            st.error(msg)
-                else:
-                    st.error("請輸入帳號與密碼")
+                        # 登入成功後，強制關閉訪客模式
+                        st.session_state.is_guest = False 
+                        
+                        st.session_state.is_logged_in = True
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            else:
+                st.error("請輸入帳號與密碼")
     st.stop()
 
 # ==========================================
