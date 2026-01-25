@@ -568,7 +568,7 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
 
 st.markdown("---")
 
-# --- 2. 管理清單 (無預算版) ---
+# --- 2. 管理清單 (手機優化：卡片式版面) ---
 st.subheader("📋 願望書單")
 
 if df.empty:
@@ -585,7 +585,7 @@ else:
             padding: 12px 15px; 
             border-radius: 12px; 
             border: 1px solid #FFE0B2;
-            margin-bottom: 25px;
+            margin-bottom: 25px; 
             font-size: 1rem;
             color: #5C4B45;
         ">
@@ -661,7 +661,7 @@ else:
     if st.session_state.is_guest:
          st.button("💾 儲存 (訪客無法使用)", disabled=True, use_container_width=True)
     else:
-        # 使用 callback 機制處理存檔，避免邏輯過於複雜
+        # 使用 callback 機制處理存檔
         if st.button("💾 儲存到雲端", type="primary", use_container_width=True):
             with st.spinner("正在同步..."):
                 # 1. 將收集到的 dict 轉回 DataFrame
@@ -700,7 +700,7 @@ if not df.empty:
 
     with exp_c2:
         txt_content = f"📚 {st.session_state.user_id} 的採購清單\n"
-        txt_content += f"總花費：${int(total_spent)}\n" 
+        txt_content += f"總花費：${int(total_spent)}\n" # 只保留總花費
         txt_content += "="*30 + "\n"
         
         for idx, row in df.iterrows():
