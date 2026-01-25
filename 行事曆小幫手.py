@@ -468,47 +468,55 @@ def check_login(user_id, input_pin):
 # 登入頁面 (修改後的版本)
 # ==========================================
 if not st.session_state.is_logged_in:
+    # 1. 上方：標題與說明文字
     st.title("📅 2026 台北國際書展行事曆小幫手")
-    intro_col, login_col = st.columns([0.6, 0.4])
-    with intro_col:
-        st.markdown("""
+    
+    st.markdown("""
         ### 歡迎使用！
         **功能**
         * 勾選活動即時生成行事曆
         * 建立帳號可隨時儲存與修改行事曆
         * 支援匯出google行事曆或文字表格檔案
         """)
-    with login_col:
-        with st.container(border=True):
-            st.subheader("🔐 用戶登入")
-            with st.form("login_form"):
-                input_id = st.text_input("👤 帳號", placeholder="限輸入英文或數字")
-                input_pin = st.text_input("🔑 密碼", type="password", placeholder="限輸入英文或數字")
-                st.caption("※ 若帳號是第一次使用，系統將自動以此密碼註冊。")
-                submit = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True)
+    
+    # 2. 下方：登入卡片 (垂直排列在文字下方)
+    with st.container(border=True):
+        st.subheader("🔐 用戶登入")
+        
+        # --- 表單區塊 (只放帳號密碼) ---
+        with st.form("login_form"):
+            input_id = st.text_input("👤 帳號", placeholder="限輸入英文或數字")
+            input_pin = st.text_input("🔑 密碼", type="password", placeholder="限輸入英文或數字")
+            st.caption("※ 若帳號是第一次使用，系統將自動以此密碼註冊。")
             
-            if st.button("👀 免登入試用", use_container_width=True):
-                st.session_state.is_guest = True
-                st.session_state.user_id = "Guest"
-                st.session_state.is_logged_in = True
-                st.rerun()
+            # 表單內唯一的提交按鈕
+            submit = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True)
 
-            if submit:
-                if input_id and input_pin:
-                    with st.spinner("驗證中..."):
-                        is_valid, saved_ids, msg = check_login(input_id, input_pin)
-                        
-                        if is_valid:
-                            st.session_state.saved_ids = saved_ids
-                            st.session_state.user_id = input_id
-                            st.session_state.user_pin = input_pin # 記住密碼以便存檔時使用
-                            st.session_state.is_guest = False
-                            st.session_state.is_logged_in = True
-                            st.rerun()
-                        else:
-                            st.error(msg)
-                else:
-                    st.error("請輸入帳號與密碼")
+        # --- 訪客按鈕 (🔥 關鍵修正：移出 form 之外，但在 container 之內) ---
+        st.write("") # 加一點間距
+        if st.button("👀 免登入試用", use_container_width=True):
+            st.session_state.is_guest = True
+            st.session_state.user_id = "Guest"
+            st.session_state.is_logged_in = True
+            st.rerun()
+
+        # --- 登入邏輯處理 ---
+        if submit:
+            if input_id and input_pin:
+                with st.spinner("驗證中..."):
+                    is_valid, saved_ids, msg = check_login(input_id, input_pin)
+                    
+                    if is_valid:
+                        st.session_state.saved_ids = saved_ids
+                        st.session_state.user_id = input_id
+                        st.session_state.user_pin = input_pin 
+                        st.session_state.is_guest = False
+                        st.session_state.is_logged_in = True
+                        st.rerun()
+                    else:
+                        st.error(msg)
+            else:
+                st.error("請輸入帳號與密碼")
     st.stop()
 
 # ==========================================
