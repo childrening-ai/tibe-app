@@ -249,7 +249,7 @@ def load_user_cart(user_id):
     except:
         return pd.DataFrame()
 
-# --- 儲存功能 (修正 list index out of range 防呆版) ---
+# --- 儲存功能 (修正版：強制重置 Index 防止報錯) ---
 def save_user_cart_to_cloud(user_id, user_pin, current_df):
     client = get_gspread_client()
     if not client: return False
@@ -257,44 +257,40 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
         sh = client.open(SHEET_NAME)
         ws = sh.worksheet(WORKSHEET_MASTER_CART)
         
+        # 🔥🔥🔥 關鍵修正：在這裡加入這行！🔥🔥🔥
+        # 強制重置索引，消除任何重複的編號 (例如兩個第0列)
+        current_df = current_df.reset_index(drop=True)
+        # ----------------------------------------
+        
         TARGET_COLS = ["User_ID", "Password", "書名", "出版社", "定價", "折扣", "折扣價", "狀態", "備註"]
         
         # 讀取現有資料
         existing_data = ws.get_all_values()
         
-        # 建立乾淨的 DataFrame (預設為空)
-        df_clean = pd.DataFrame(columns=TARGET_COLS)
+        # ... (以下程式碼保持不變) ...
         
-        # 🔥 關鍵修正：多重檢查，防止 index out of range
+        df_clean = pd.DataFrame(columns=TARGET_COLS)
         has_data = False
         if existing_data and len(existing_data) > 0:
-            # 確保第一列真的有資料，而不是空 list []
             if len(existing_data[0]) > 0:
-                # 檢查第一格是否為 User_ID (標題列)
                 if str(existing_data[0][0]).strip() == "User_ID":
                     has_data = True
 
         if has_data and len(existing_data) > 1:
-            # 有標題且有內容，才轉換為 DataFrame
-            # 使用 try-except 包裹 DataFrame 轉換，避免欄位數不符報錯
             try:
                 df_clean = pd.DataFrame(existing_data[1:], columns=TARGET_COLS)
             except ValueError:
-                # 如果欄位對不上 (例如 Sheet 有 8 欄，程式要 9 欄)，就強制只取前幾欄或重置
-                # 這裡選擇簡單策略：若格式亂掉，視為舊資料不可用，只保留標題重寫
                 pass
 
         # 1. 準備要寫入的新資料
         new_records = current_df.copy()
 
-        # 🔥 關鍵修正：將 App 用的 "折數" 改名為 資料庫用的 "折扣"
         if "折數" in new_records.columns:
             new_records.rename(columns={"折數": "折扣"}, inplace=True)
 
         new_records["User_ID"] = str(user_id)
         new_records["Password"] = str(user_pin)
         
-        # 補齊欄位
         for col in TARGET_COLS:
             if col not in new_records.columns: new_records[col] = ""
         new_records = new_records[TARGET_COLS]
@@ -307,7 +303,7 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
 
         # 3. 合併
         df_final = pd.concat([df_keep, new_records], ignore_index=True)
-        df_final = df_final.fillna("") # 再次確保沒有 NaN
+        df_final = df_final.fillna("") 
         
         # 4. 寫回
         final_values = [TARGET_COLS] + df_final.values.tolist()
@@ -315,7 +311,7 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
         ws.update(range_name='A1', values=final_values)
         return True
     except Exception as e:
-        st.error(f"儲存失敗: {str(e)}") # 印出更詳細的錯誤
+        st.error(f"儲存失敗: {str(e)}")
         return False
 
 # --- 🔥 強力 AI 解析函式 (維持不變) ---
