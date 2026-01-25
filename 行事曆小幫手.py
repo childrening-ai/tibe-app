@@ -595,16 +595,18 @@ else:
             if "參加" not in day_df.columns:
                 day_df.insert(0, "參加", day_df['id'].isin(st.session_state.saved_ids))
             
+            # 🔥 修改 1：定義固定的欄位顯示順序
+            cols_to_show = ["參加", "時間", "活動名稱", "地點", "主講人"]
+
             edited_day_df = st.data_editor(
-                day_df,
+                day_df[cols_to_show], # 🔥 修改 2：只傳入指定順序的欄位 (這樣就鎖定順序了)
                 column_config={
                     "參加": st.column_config.CheckboxColumn("參加", width="small"),
-                    "時間": st.column_config.TextColumn("時間", width="small"),
-                    "活動名稱": st.column_config.TextColumn("活動名稱", width="large"),
-                    "地點": st.column_config.TextColumn("地點", width="medium"),
-                    "主講人": st.column_config.TextColumn("主講人", width="medium"),
-                    "類型": None, "主持人": None, "詳細內容": None, "備註": None, "來源": None, 
-                    "id": None, "start_dt": None, "end_dt": None, "日期": None
+                    # 🔥 修改：加上 disabled=True 鎖住欄位
+                    "時間": st.column_config.TextColumn("時間", width="small", disabled=True),
+                    "活動名稱": st.column_config.TextColumn("活動名稱", width="medium", disabled=True),
+                    "地點": st.column_config.TextColumn("地點", width="samll", disabled=True),
+                    "主講人": st.column_config.TextColumn("主講人", width="medium", disabled=True),
                 },
                 hide_index=True,
                 key=f"editor_{date_str}"
