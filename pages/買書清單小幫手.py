@@ -456,32 +456,29 @@ st.title(f"🛒 {st.session_state.user_id} 的採購清單")
 df = st.session_state.cart_data
 expected_cols = ["書名", "出版社", "定價", "折扣", "折扣價", "狀態", "備註"]
 for c in expected_cols:
-    if c not in df.columns: df[c] = "" # 防呆
+    if c not in df.columns: df[c] = "" 
 
-# 轉換數值型別
+# 轉換數值
 df['定價'] = pd.to_numeric(df['定價'], errors='coerce').fillna(0)
 df['折扣價'] = pd.to_numeric(df['折扣價'], errors='coerce').fillna(0)
+if "折數" not in df.columns:
+    if "折扣" in df.columns:
+        df["折數"] = (pd.to_numeric(df["折扣"], errors='coerce').fillna(1.0) * 100).astype(int)
+    else:
+        df["折數"] = 100
 
-# 計算金額
+# 計算金額 (供下方統計使用)
 calc_price = df['折扣價'].where(df['折扣價'] > 0, df['定價'])
 total_spent = calc_price[df['狀態'].isin(['待購', '已購'])].sum()
 remain = st.session_state.budget - total_spent
 
-# --- 狀態統計區 (暖陽風格) ---
-c1, c2, c3 = st.columns(3)
-with c1: st.metric("📚 書籍數量", f"{len(df)} 本")
-with c2: st.metric("💸 預計花費", f"${int(total_spent)}")
-with c3: st.metric("💰 剩餘預算", f"${int(remain)}", delta_color="normal" if remain >= 0 else "inverse")
-
-st.markdown("---")
-
-# --- 新增書籍區塊 ---
-st.subheader("➕ 新增書籍")
-
-with st.container(border=True):
-    # AI 區塊
-    with st.expander("📸 AI 智慧辨識 (點此展開)", expanded=True):
-        if has_ai:
+# --- 1. 新增書籍 (改為預設折疊，節省空間) ---
+# 注意：Streamlit 不支援 Expander 裡面再包 Expander，所以 AI 區塊改成用 Checkbox 開關
+with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
+    
+    # AI 控制開關
+    if has_ai:
+        if st.toggle("📸 開啟 AI 智慧辨識 (Gemini 2.0)", value=False):
             st.info("💡 提示：手機拍攝書籍封面、或直接拍電腦螢幕上的博客來網頁皆可。")
             uploaded_file = st.file_uploader("📂 點此開啟相機或圖庫", type=['jpg', 'png', 'jpeg'])
             
@@ -493,13 +490,10 @@ with st.container(border=True):
                         result = analyze_image_robust(image)
                         
                         if result:
-                            # 填入 Session State
                             t_val = result.get("書名") or result.get("書籍名稱") or ""
                             st.session_state["in_title"] = str(t_val)
-
                             p_val = result.get("出版社") or ""
                             st.session_state["in_pub"] = str(p_val)
-
                             price_raw = result.get("定價") or 0
                             try:
                                 if isinstance(price_raw, str):
@@ -510,16 +504,14 @@ with st.container(border=True):
                             except:
                                 final_p = 0
                             st.session_state["in_price"] = final_p
-                            
                             st.success(f"✅ 辨識成功！")
                             time.sleep(0.5)
                             st.rerun()
                         else:
-                            st.error("⚠️ 辨識失敗，無法解析資料。")
-        else:
-            st.warning("⚠️ 請設定 Gemini API Key")
+                            st.error("⚠️ 辨識失敗")
+            st.markdown("---")
 
-    # 手動輸入/確認表單
+    # 手動輸入表單
     c_form1, c_form2 = st.columns([3, 1])
     with c_form1:
         new_title = st.text_input("📘 書名 (必填)", key="in_title")
@@ -533,95 +525,80 @@ with st.container(border=True):
             🔍 查博客來
             </button></a>''', unsafe_allow_html=True)
 
-    c3, c4, c5, c6 = st.columns([1.2, 1, 1, 1.2]) # 調整欄位比例
+    c3, c4, c5, c6 = st.columns([1.2, 1, 1, 1.2]) 
     with c3: new_publisher = st.text_input("🏢 出版社", key="in_pub")
     with c4: new_price = st.number_input("💰 定價", min_value=0, step=10, key="in_price")
-    
-    # 🔥 修改 1：折數改為手動輸入整數 (例如 79)
-    with c5: 
-        new_discount = st.number_input("📉 折數", min_value=1, max_value=100, value=79, step=1, help="79折請輸入79", key="in_discount")
-    
-    # 🔥 修改 2：視覺化價格顯示 (珊瑚色卡片)
+    with c5: new_discount = st.number_input("📉 折數", min_value=1, max_value=100, value=79, step=1, key="in_discount")
     with c6: 
         calc_final = int(new_price * (new_discount / 100))
-        st.write("") # 為了對齊
+        st.write("") 
         st.markdown(
             f"""
-            <div style="
-                background-color: #FFF3E0;
-                border: 2px solid #FF8C69;
-                border-radius: 10px;
-                text-align: center;
-                padding: 2px 0;
-            ">
-                <span style="font-size: 0.8rem; color: #E65100;">🏷️ 折後價</span><br>
-                <span style="font-size: 1.4rem; font-weight: bold; color: #BF360C;">${calc_final}</span>
+            <div style="background-color: #FFF3E0; border: 2px solid #FF8C69; border-radius: 10px; text-align: center; padding: 2px 0;">
+                <span style="font-size: 0.8rem; color: #E65100;">折後</span>
+                <span style="font-size: 1.2rem; font-weight: bold; color: #BF360C;">${calc_final}</span>
             </div>
-            """, 
-            unsafe_allow_html=True
+            """, unsafe_allow_html=True
         )
         
     c7, c8 = st.columns([3, 1])
     with c7: new_note = st.text_input("📝 備註 (選填)", key="in_note")
     with c8:
         st.write("")
-        st.button("➕ 加入清單", 
-                  type="primary", 
-                  use_container_width=True, 
-                  on_click=submit_book_callback
-        )
+        st.button("➕ 加入", type="primary", use_container_width=True, on_click=submit_book_callback)
 
 st.markdown("---")
+
+# --- 2. 管理清單 (整合統計資訊) ---
 st.subheader("📋 管理清單")
 
 if df.empty:
-    st.info("目前清單是空的，快去上面新增幾本吧！")
+    st.info("目前清單是空的，快點開上面「新增書籍」加入第一本書吧！")
 else:
+    # 🔥 統計資訊列 (小字體，緊湊排列)
+    remain_color = "#E65100" if remain >= 0 else "#D32F2F" # 預算夠是橘色，超支變紅色
+    st.markdown(
+        f"""
+        <div style="
+            display: flex; 
+            justify-content: space-between; 
+            background-color: #FFF9F0; 
+            padding: 10px 15px; 
+            border-radius: 12px; 
+            border: 1px solid #FFE0B2;
+            margin-bottom: 15px;
+            font-size: 0.95rem;
+        ">
+            <span>📚 書籍：<b>{len(df)}</b> 本</span>
+            <span>💸 花費：<b>${int(total_spent)}</b></span>
+            <span style="color: {remain_color};">💰 剩餘：<b>${int(remain)}</b></span>
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+
     df_display = df.copy()
     
-    # 🔥 修改 1：新增「No.」流水號 (從 1 開始)
-    # 這裡使用 range 產生 1, 2, 3...
-    df_display.insert(0, "No.", range(1, len(df_display) + 1))
+    # 加入刪除勾選框 (最左邊)
+    df_display.insert(0, "刪除", False)
     
-    # 加入刪除勾選框 (放在 No. 後面)
-    df_display.insert(1, "刪除", False)
-    
-    # 確保「折數」欄位存在 (相容舊資料)
-    if "折數" not in df_display.columns:
-        if "折扣" in df_display.columns:
-            # 如果是舊資料(小數點)，轉換成整數顯示 (0.79 -> 79)
-            df_display["折數"] = (df_display["折扣"] * 100).astype(int)
-        else:
-            df_display["折數"] = 100 # 預設不打折
-
-    # 🔥 修改 2：表格欄位寬度優化 (手機友善設定)
+    # 表格設定 (移除 No. 欄位，隱藏 Index)
     edited_df = st.data_editor(
         df_display,
         use_container_width=True,
         num_rows="fixed",
+        hide_index=True, 
         key="main_editor",
         column_config={
-            "No.": st.column_config.NumberColumn("No.", width="small", disabled=True), # 唯讀流水號
-            "刪除": st.column_config.CheckboxColumn("刪", width="small"), # 縮短標題
-            # 書名給最大空間 (medium/large)，其他都設 small
-            "書名": st.column_config.TextColumn("書名", width="medium"), 
+            "刪除": st.column_config.CheckboxColumn("刪", width="small"),
+            "書名": st.column_config.TextColumn("書名", width="medium"),
             "出版社": st.column_config.TextColumn("出版社", width="small"),
             "定價": st.column_config.NumberColumn("定價", format="$%d", width="small"),
-            
-            # 🔥 修改 3：折數可編輯 (1-100)
             "折數": st.column_config.NumberColumn("折數", min_value=1, max_value=100, step=1, format="%d", width="small"),
-            
-            # 折扣價不讓改 (因為是算出來的)，設為 disabled 或是隱藏
             "折扣價": st.column_config.NumberColumn("售價", format="$%d", width="small", disabled=True),
-            
-            "狀態": st.column_config.SelectboxColumn(
-                "狀態",
-                options=["待購", "已購", "猶豫", "放棄"], # 縮短選項文字
-                width="small",
-                required=True
-            ),
+            "狀態": st.column_config.SelectboxColumn("狀態", options=["待購", "已購", "猶豫", "放棄"], width="small", required=True),
             "備註": st.column_config.TextColumn("備註", width="small"),
-            "折扣": None # 隱藏舊欄位
+            "折扣": None
         }
     )
     
@@ -631,16 +608,13 @@ else:
         rows_to_delete = edited_df[edited_df["刪除"] == True]
         if len(rows_to_delete) > 0:
             if st.button(f"🗑️ 刪除 ({len(rows_to_delete)})", type="secondary", use_container_width=True):
-                # 刪除邏輯
-                final_df = edited_df[edited_df["刪除"] == False].drop(columns=["No.", "刪除"])
-                # 重新計算折扣價 (防止手動改了折數但價格沒變)
+                final_df = edited_df[edited_df["刪除"] == False].drop(columns=["刪除"])
+                # 重算價格
                 final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
                 
                 st.session_state.cart_data = final_df
-                
                 if not st.session_state.is_guest:
                     save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, final_df)
-                
                 st.toast("已刪除！")
                 st.rerun()
                 
@@ -649,11 +623,9 @@ else:
              st.button("💾 儲存 (訪客無法使用)", disabled=True, use_container_width=True)
         else:
             if st.button("💾 儲存修改", type="primary", use_container_width=True):
-                # 🔥 修改 4：加入轉圈圈動畫
-                with st.spinner("正在同步雲端..."):
-                    # 整理資料：移除 No. 和 刪除 欄位
-                    final_df = edited_df.drop(columns=["No.", "刪除"])
-                    # 重新計算折扣價 (因為使用者可能改了折數)
+                with st.spinner("同步運算中..."):
+                    final_df = edited_df.drop(columns=["刪除"])
+                    # 強制重算價格
                     final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
                     
                     st.session_state.cart_data = final_df
@@ -661,3 +633,43 @@ else:
                         st.success("✅ 儲存成功！")
                         time.sleep(1)
                         st.rerun()
+
+# --- 3. 匯出功能 ---
+st.markdown("---")
+st.subheader("📤 匯出清單")
+
+if not df.empty:
+    exp_c1, exp_c2 = st.columns(2)
+    with exp_c1:
+        out_cols = ["書名", "出版社", "定價", "折數", "折扣價", "狀態", "備註"] 
+        valid_cols = [c for c in df.columns if c in out_cols]
+        csv_data = df[valid_cols].to_csv(index=False).encode('utf-8-sig')
+        st.download_button(
+            "🖨️ 下載表格 (.csv)", 
+            data=csv_data, 
+            file_name=f"book_list_{st.session_state.user_id}.csv", 
+            mime="text/csv",
+            use_container_width=True
+        )
+
+    with exp_c2:
+        txt_content = f"📚 {st.session_state.user_id} 的採購清單\n"
+        txt_content += f"預算：{st.session_state.budget} | 花費：{int(total_spent)} | 剩餘：{int(remain)}\n"
+        txt_content += "="*30 + "\n"
+        
+        for idx, row in df.iterrows():
+            status_icon = "✅" if row['狀態'] == '已購' else "⬜"
+            price_info = f"${row['折扣價']} (原${row['定價']} / {row['折數']}折)"
+            txt_content += f"{status_icon} {row['書名']}\n"
+            txt_content += f"   - {row['出版社']} | {price_info}\n"
+            if row['備註']:
+                txt_content += f"   - 備註: {row['備註']}\n"
+            txt_content += "-"*20 + "\n"
+            
+        st.download_button(
+            "💬 下載文字清單 (.txt)", 
+            data=txt_content, 
+            file_name=f"book_list_{st.session_state.user_id}.txt", 
+            mime="text/plain",
+            use_container_width=True
+        )
