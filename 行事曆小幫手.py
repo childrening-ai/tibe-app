@@ -581,7 +581,7 @@ else:
                 # 顯示已選數量 (使用珊瑚色強調)
                 st.markdown(
                     f"<div style='color: #FF8C69; font-weight: bold; font-size: 1.1rem; padding-top: 5px;'>"
-                    f"📊 已勾選：{current_total} 場"
+                    f"已勾選：{current_total} 場"
                     f"</div>", 
                     unsafe_allow_html=True
                 )
@@ -696,7 +696,7 @@ calendar(events=cal_events, options=calendar_options, key=f"main_calendar")
 st.markdown("---")
 
 # --- 3. 匯出功能 ---
-st.subheader("🎒 匯出行事曆檔案 ")
+st.subheader("🎒 下載行事曆檔案 ")
 if not final_selected.empty:
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -708,19 +708,19 @@ if not final_selected.empty:
             if row['end_dt']: e.end = row['end_dt'] - timedelta(hours=8)
             e.location = str(row['地點'])
             cal_obj.events.add(e)
-        st.download_button("匯出google行事曆 (.ics)", data=cal_obj.serialize(), file_name="tibe_2026.ics", mime="text/calendar")
+        st.download_button("下載google行事曆 (.ics)", data=cal_obj.serialize(), file_name="tibe_2026.ics", mime="text/calendar")
     
     with c2:
         cols = ["日期", "時間", "活動名稱", "地點", "備註"]
         v_cols = [c for c in cols if c in final_selected.columns]
         csv_data = final_selected[v_cols].to_csv(index=False).encode('utf-8-sig')
-        st.download_button("匯出表格 (.csv)", data=csv_data, file_name="tibe.csv", mime="text/csv")
+        st.download_button("下載表格 (.csv)", data=csv_data, file_name="tibe.csv", mime="text/csv")
 
     with c3:
         txt = ""
         for _, row in final_selected.sort_values(by=['日期','時間']).iterrows():
             txt += f"{row['日期']} {row['時間']} | {row['活動名稱']} @ {row['地點']}\n"
-        st.download_button("匯出文字檔", data=txt, file_name="tibe.txt", mime="text/plain")
+        st.download_button("下載文字檔 (.txt)", data=txt, file_name="tibe.txt", mime="text/plain")
 
 # ==========================================
 # 隱私權與資料聲明

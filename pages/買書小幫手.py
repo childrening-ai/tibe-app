@@ -10,7 +10,7 @@ import google.generativeai as genai
 from PIL import Image
 
 # 1. 頁面設定
-st.set_page_config(page_title="書展採購清單", page_icon="📚", layout="wide")
+st.set_page_config(page_title="買書小幫手", page_icon="📚", layout="wide")
 
 # ==========================================
 # 🎨 UI 美化工程 (暖陽珊瑚風格 - 統一標準版)
@@ -209,7 +209,7 @@ def check_login(user_id, input_pin):
                 if stored_pin == "" or stored_pin == str(input_pin).strip():
                     return True, "登入成功"
                 else:
-                    return False, "⚠️ 密碼錯誤，或是此暱稱已被他人使用！"
+                    return False, "⚠️ 密碼錯誤，或是此帳號已被他人使用！"
             else:
                 return True, "新帳號註冊"
         
@@ -385,7 +385,7 @@ def submit_book_callback():
     if not st.session_state.get("is_guest", False):
         save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, st.session_state.cart_data)
         # 🔥 修改：將成功訊息存入 session_state
-        st.session_state.add_msg = {"type": "success", "text": f"✅ 已加入管理清單：{val_title}"}
+        st.session_state.add_msg = {"type": "success", "text": f"✅ 已加入願望書單：{val_title}"}
     else:
         st.session_state.add_msg = {"type": "success", "text": f"👻 (訪客) 已暫存：{val_title}"}
     
@@ -401,27 +401,27 @@ def submit_book_callback():
 has_ai = configure_genai()
 
 if not st.session_state.is_logged_in:
-    st.title("📚 2026 書展採購清單")
+    st.title("📚 買書小幫手")
     intro_col, login_col = st.columns([0.6, 0.4])
     with intro_col:
         st.markdown("""
         ### 歡迎使用！
-        **功能特色：**
-        * ✅ **預算控管**：即時計算剩餘金額
-        * ✅ **AI 辨識**：拍書封自動填寫資料
-        * ✅ **雲端同步**：資料安全帶著走
+        **功能**
+        * AI拍照自動填寫書籍資料
+        * 建立帳號可隨時儲存與修改書單
+        * 支援匯出文字或表格檔案
         """)
     with login_col:
         with st.container(border=True):
             st.subheader("🔐 用戶登入")
             with st.form("login_form"):
-                input_id = st.text_input("👤 暱稱 / 帳號", placeholder="例如: Kevin")
-                input_pin = st.text_input("🔑 密碼 (PIN)", type="password", placeholder="設定 4-6 碼密碼")
-                st.caption("※ 若暱稱是第一次使用，系統將自動以此密碼註冊。")
+                input_id = st.text_input("👤 帳號", placeholder="限輸入英文或數字")
+                input_pin = st.text_input("🔑 密碼", type="password", placeholder="限輸入英文或數字")
+                st.caption("※ 若帳號是第一次使用，系統將自動以此密碼註冊。")
                 submit = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True)
             
             # 🔥 新增：訪客按鈕
-            if st.button("👀 免登入試用 (資料不保留)", use_container_width=True):
+            if st.button("👀 免登入試用", use_container_width=True):
                 st.session_state.is_guest = True
                 st.session_state.user_id = "Guest"
                 st.session_state.cart_data = pd.DataFrame() # 訪客從空清單開始
@@ -447,7 +447,7 @@ if not st.session_state.is_logged_in:
                         else:
                             st.error(msg)
                 else:
-                    st.error("請輸入暱稱與密碼")
+                    st.error("請輸入帳號與密碼")
     st.stop()
 
 # ==========================================
@@ -462,7 +462,8 @@ if st.sidebar.button("🚪 登出", use_container_width=True):
     st.session_state.cart_data = pd.DataFrame()
     st.rerun()
 
-st.title(f"🛒 {st.session_state.user_id} 的採購清單")
+st.title(f"📷 新增書籍資料")
+st.caption("請先輸入書籍資料，之後可在願望書單修改與刪除，最後請記得儲存到雲端再離開網頁")
 
 # 確保 cart_data 是最新的 DataFrame
 df = st.session_state.cart_data
@@ -489,8 +490,8 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
     
     # AI 控制開關 (保持不變)
     if has_ai:
-        if st.toggle("📸 開啟 AI 智慧辨識 (Gemini 2.0)", value=False):
-            st.info("💡 提示：手機拍攝書籍封面、或直接拍電腦螢幕上的博客來網頁皆可。")
+        if st.toggle("📸 開啟 AI 辨識", value=False):
+            st.info("💡 提示：手機拍攝書籍封面、版權頁、或電腦螢幕上的博客來網頁。")
             uploaded_file = st.file_uploader("📂 點此開啟相機或圖庫", type=['jpg', 'png', 'jpeg'])
             
             if uploaded_file:
@@ -555,7 +556,7 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
     with c7: new_note = st.text_input("📝 備註 (選填)", key="in_note")
     with c8:
         st.write("")
-        st.button("➕ 加入", type="primary", use_container_width=True, on_click=submit_book_callback)
+        st.button("加入願望書單", type="primary", use_container_width=True, on_click=submit_book_callback)
 
     # 🔥 新增：在按鈕正下方顯示回饋訊息
     if "add_msg" in st.session_state and st.session_state.add_msg:
@@ -568,10 +569,10 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
 st.markdown("---")
 
 # --- 2. 管理清單 (無預算版) ---
-st.subheader("📋 管理清單")
+st.subheader("📋 願望書單")
 
 if df.empty:
-    st.info("目前清單是空的，快點開上面「新增書籍」加入第一本書吧！")
+    st.info("目前書單是空的，快點開上面「新增書籍」加入第一本書吧！")
 else:
     # 🔥 統計資訊列 (只顯示數量與花費，並調整為置中均分)
     st.markdown(
@@ -588,8 +589,8 @@ else:
             font-size: 1rem;
             color: #5C4B45;
         ">
-            <span>📚 書籍數：<b>{len(df)}</b> 本</span>
-            <span>💸 總花費：<b style="color: #D32F2F;">${int(total_spent)}</b></span>
+            <span>📚 <b>{len(df)}</b> 本</span>
+            <span>💸 <b style="color: #D32F2F;">${int(total_spent)}</b></span>
         </div>
         """, 
         unsafe_allow_html=True
@@ -640,8 +641,8 @@ else:
         if st.session_state.is_guest:
              st.button("💾 儲存 (訪客無法使用)", disabled=True, use_container_width=True)
         else:
-            if st.button("💾 儲存修改", type="primary", use_container_width=True):
-                with st.spinner("同步雲端中..."):
+            if st.button("💾 儲存到雲端", type="primary", use_container_width=True):
+                with st.spinner("正在同步..."):
                     final_df = edited_df.drop(columns=["刪除"])
                     # 強制重算價格
                     final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
@@ -654,7 +655,7 @@ else:
 
 # --- 3. 匯出功能 ---
 st.markdown("---")
-st.subheader("📤 匯出清單")
+st.subheader("📤 下載願望書單")
 
 if not df.empty:
     exp_c1, exp_c2 = st.columns(2)
@@ -663,7 +664,7 @@ if not df.empty:
         valid_cols = [c for c in df.columns if c in out_cols]
         csv_data = df[valid_cols].to_csv(index=False).encode('utf-8-sig')
         st.download_button(
-            "🖨️ 下載表格 (.csv)", 
+            "下載表格 (.csv)", 
             data=csv_data, 
             file_name=f"book_list_{st.session_state.user_id}.csv", 
             mime="text/csv",
@@ -685,7 +686,7 @@ if not df.empty:
             txt_content += "-"*20 + "\n"
             
         st.download_button(
-            "💬 下載文字清單 (.txt)", 
+            "下載文字檔 (.txt)", 
             data=txt_content, 
             file_name=f"book_list_{st.session_state.user_id}.txt", 
             mime="text/plain",
