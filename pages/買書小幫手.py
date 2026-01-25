@@ -618,7 +618,7 @@ else:
             "刪除": st.column_config.CheckboxColumn("刪", width="small"),
             # 🔥 修改：改為 Checkbox，標題設為 "已購"
             "已購": st.column_config.CheckboxColumn("已購", width="small"), 
-            "書名": st.column_config.TextColumn("書名", width="medium"),
+            "書名": st.column_config.TextColumn("書名", width="small"),
             "出版社": st.column_config.TextColumn("出版社", width="small"),
             "定價": st.column_config.NumberColumn("定價", format="$%d", width="small"),
             "折數": st.column_config.NumberColumn("折數", min_value=1, max_value=100, step=1, format="%d", width="small"),
