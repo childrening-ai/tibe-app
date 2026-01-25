@@ -500,8 +500,8 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
     
     # AI 控制開關 (保持不變)
     if has_ai:
-        if st.toggle("📸 開啟 AI 辨識", value=False):
-            st.info("💡 提示：手機拍攝書籍封面、版權頁、或電腦螢幕上的博客來網頁。")
+        if st.toggle("開啟 AI 辨識", value=False):
+            st.info("提示：手機拍攝書籍封面、版權頁、或電腦螢幕上的博客來網頁。")
             uploaded_file = st.file_uploader("📂 點此開啟相機或圖庫", type=['jpg', 'png', 'jpeg'])
             
             if uploaded_file:
@@ -535,7 +535,7 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
     # 手動輸入表單
     c_form1, c_form2 = st.columns([3, 1])
     with c_form1:
-        new_title = st.text_input("📘 書名 (必填)", key="in_title")
+        new_title = st.text_input("書名 (必填)", key="in_title")
     with c_form2:
         st.write("") 
         st.write("") 
@@ -543,13 +543,13 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
         if current_title:
             st.markdown(f'''<a href="https://search.books.com.tw/search/query/key/{current_title}" target="_blank">
             <button style="width:100%; padding: 0.5rem; background-color: #FFF9F0; color: #E65100; border: 1px solid #FFCCBC; border-radius: 12px; cursor: pointer;">
-            🔍 查博客來
+            前往博客來搜尋
             </button></a>''', unsafe_allow_html=True)
 
     c3, c4, c5, c6 = st.columns([1.2, 1, 1, 1.2]) 
-    with c3: new_publisher = st.text_input("🏢 出版社", key="in_pub")
-    with c4: new_price = st.number_input("💰 定價", min_value=0, step=10, key="in_price")
-    with c5: new_discount = st.number_input("📉 折數", min_value=1, max_value=100, value=79, step=1, key="in_discount")
+    with c3: new_publisher = st.text_input("出版社", key="in_pub")
+    with c4: new_price = st.number_input("定價", min_value=0, step=10, key="in_price")
+    with c5: new_discount = st.number_input("折數（100=不打折, 66=66折）", min_value=1, max_value=100, value=79, step=1, key="in_discount")
     with c6: 
         calc_final = int(new_price * (new_discount / 100))
         st.write("") 
@@ -563,7 +563,7 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
         )
         
     c7, c8 = st.columns([3, 1])
-    with c7: new_note = st.text_input("📝 備註 (選填)", key="in_note")
+    with c7: new_note = st.text_input("備註 (選填)", key="in_note")
     with c8:
         st.write("")
         st.button("加入願望書單", type="primary", use_container_width=True, on_click=submit_book_callback)
@@ -580,6 +580,7 @@ st.markdown("---")
 
 # --- 2. 管理清單 (無預算版) ---
 st.subheader("📋 願望書單")
+st.caption("欄位資料都可以再修改，售價在儲存後才會更新正確價格，離開網頁前請記得儲存喔！")
 
 if df.empty:
     st.info("目前書單是空的，快點開上面「新增書籍」加入第一本書吧！")
@@ -690,6 +691,7 @@ else:
 # --- 3. 匯出功能 ---
 st.markdown("---")
 st.subheader("📤 下載願望書單")
+st.caption("表格csv檔可以用 excel 或 google 表單開啟")
 
 if not df.empty:
     exp_c1, exp_c2 = st.columns(2)

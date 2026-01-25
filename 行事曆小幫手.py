@@ -643,6 +643,7 @@ st.markdown("---")
 
 # --- 2. 行程週曆 ---
 st.subheader("🗓️ 你的活動行事曆 ")
+st.caption("確認沒錯後，記得離開網頁前要儲存喔！")
 
 final_selected = proc_df[
     (proc_df['id'].isin(st.session_state.saved_ids)) & 
