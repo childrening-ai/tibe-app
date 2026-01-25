@@ -337,18 +337,17 @@ def analyze_image_robust(image):
         st.session_state.debug_ai_raw = f"Error: {str(e)}"
         return None
 
-# --- 加入購物車 Callback (修正折數邏輯版) ---
+# --- 加入購物車 Callback (明確回饋版) ---
 def submit_book_callback():
     val_title = st.session_state.get("in_title", "").strip()
     val_pub = st.session_state.get("in_pub", "").strip()
     val_price = st.session_state.get("in_price", 0.0)
-    val_discount = st.session_state.get("in_discount", 100) # 預設 100 (不打折)
+    val_discount = st.session_state.get("in_discount", 100)
     val_note = st.session_state.get("in_note", "").strip()
     
-    # 計算折扣價 (邏輯修正：輸入 79 代表 79折)
+    # 計算折扣價
     try:
         p = float(val_price)
-        # 公式：價格 x (折數 / 100)
         calc_final = int(p * (val_discount / 100))
     except:
         p = 0
@@ -362,13 +361,13 @@ def submit_book_callback():
         "書名": val_title,
         "出版社": val_pub,
         "定價": p,
-        "折數": val_discount, # 欄位名稱改成「折數」
+        "折數": val_discount,
         "折扣價": calc_final,
         "狀態": "待購", 
         "備註": val_note
     }])
 
-    # 更新 Session 中的資料
+    # 更新 Session
     if st.session_state.cart_data.empty:
         st.session_state.cart_data = new_row
     else:
@@ -377,11 +376,14 @@ def submit_book_callback():
     # 存檔與回饋
     if not st.session_state.get("is_guest", False):
         save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, st.session_state.cart_data)
-        st.toast(f"🎉 加入成功：{val_title}", icon="✅") # 視覺回饋
+        
+        # 🔥 修改重點：更明確的視覺回饋
+        st.toast(f"✅ 成功！「{val_title}」已加入管理清單", icon="🎉")
+        
     else:
-        st.toast(f"✅ 已暫存：{val_title} (訪客模式)", icon="👻")
+        st.toast(f"👻 (訪客) 「{val_title}」已暫存至清單", icon="✅")
     
-    # 清空輸入 (保留折數預設值，比較方便)
+    # 清空輸入
     st.session_state["in_title"] = ""
     st.session_state["in_pub"] = ""
     st.session_state["in_price"] = 0
@@ -446,7 +448,7 @@ if not st.session_state.is_logged_in:
 # 主程式
 # ==========================================
 st.sidebar.success(f"Hi, {st.session_state.user_id}")
-st.session_state.budget = st.sidebar.number_input("💰 總預算設定", value=st.session_state.budget, step=500)
+# (這裡移除了預算設定輸入框)
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 登出", use_container_width=True):
     st.session_state.is_logged_in = False
@@ -474,10 +476,9 @@ if "折數" not in df.columns:
 # 計算金額 (供下方統計使用)
 calc_price = df['折扣價'].where(df['折扣價'] > 0, df['定價'])
 total_spent = calc_price[df['狀態'].isin(['待購', '已購'])].sum()
-remain = st.session_state.budget - total_spent
+# (這裡移除了剩餘預算的計算)
 
-# --- 1. 新增書籍 (改為預設折疊，節省空間) ---
-# 注意：Streamlit 不支援 Expander 裡面再包 Expander，所以 AI 區塊改成用 Checkbox 開關
+# --- 1. 新增書籍 ---
 with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
     
     # AI 控制開關
@@ -553,29 +554,29 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
 
 st.markdown("---")
 
-# --- 2. 管理清單 (整合統計資訊) ---
+# --- 2. 管理清單 (無預算版) ---
 st.subheader("📋 管理清單")
 
 if df.empty:
     st.info("目前清單是空的，快點開上面「新增書籍」加入第一本書吧！")
 else:
-    # 🔥 統計資訊列 (小字體，緊湊排列)
-    remain_color = "#E65100" if remain >= 0 else "#D32F2F" # 預算夠是橘色，超支變紅色
+    # 🔥 統計資訊列 (只顯示數量與花費，並調整為置中均分)
     st.markdown(
         f"""
         <div style="
             display: flex; 
-            justify-content: space-between; 
+            justify-content: space-around; 
+            align-items: center;
             background-color: #FFF9F0; 
-            padding: 10px 15px; 
+            padding: 12px 15px; 
             border-radius: 12px; 
             border: 1px solid #FFE0B2;
             margin-bottom: 15px;
-            font-size: 0.95rem;
+            font-size: 1rem;
+            color: #5C4B45;
         ">
-            <span>📚 書籍：<b>{len(df)}</b> 本</span>
-            <span>💸 花費：<b>${int(total_spent)}</b></span>
-            <span style="color: {remain_color};">💰 剩餘：<b>${int(remain)}</b></span>
+            <span>📚 書籍數：<b>{len(df)}</b> 本</span>
+            <span>💸 總花費：<b style="color: #D32F2F;">${int(total_spent)}</b></span>
         </div>
         """, 
         unsafe_allow_html=True
@@ -583,10 +584,10 @@ else:
 
     df_display = df.copy()
     
-    # 加入刪除勾選框 (最左邊)
+    # 加入刪除勾選框
     df_display.insert(0, "刪除", False)
     
-    # 表格設定 (移除 No. 欄位，隱藏 Index)
+    # 表格設定
     edited_df = st.data_editor(
         df_display,
         use_container_width=True,
@@ -627,7 +628,7 @@ else:
              st.button("💾 儲存 (訪客無法使用)", disabled=True, use_container_width=True)
         else:
             if st.button("💾 儲存修改", type="primary", use_container_width=True):
-                with st.spinner("正在同步雲端..."):
+                with st.spinner("同步雲端中..."):
                     final_df = edited_df.drop(columns=["刪除"])
                     # 強制重算價格
                     final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
@@ -658,7 +659,7 @@ if not df.empty:
 
     with exp_c2:
         txt_content = f"📚 {st.session_state.user_id} 的採購清單\n"
-        txt_content += f"預算：{st.session_state.budget} | 花費：{int(total_spent)} | 剩餘：{int(remain)}\n"
+        txt_content += f"總花費：${int(total_spent)}\n" # 只保留總花費
         txt_content += "="*30 + "\n"
         
         for idx, row in df.iterrows():
