@@ -455,7 +455,7 @@ def check_login(user_id, input_pin):
                 if stored_pin == "" or stored_pin == str(input_pin).strip():
                     return True, user_rows["ID"].tolist(), "登入成功"
                 else:
-                    return False, [], "⚠️ 密碼錯誤，或是此暱稱已被他人使用！"
+                    return False, [], "⚠️ 密碼錯誤，或是此帳號已被他人使用！"
             else:
                 # 帳號不存在 -> 新註冊
                 return True, [], "新帳號註冊"
@@ -542,6 +542,7 @@ current_selection_counts = {}
 
 # 標題
 st.title("2026台北國際書展行事曆小幫手")
+st.caption("請先勾選想參加的活動，並且確認行事曆場次是否正確，最後記得儲存雲端檔案")
 if st.session_state.is_guest:
     st.caption("訪客模式：資料不會儲存")
 
@@ -580,13 +581,13 @@ else:
                 # 顯示已選數量 (使用珊瑚色強調)
                 st.markdown(
                     f"<div style='color: #FF8C69; font-weight: bold; font-size: 1.1rem; padding-top: 5px;'>"
-                    f"📊 已安排：{current_total} 場"
+                    f"📊 已勾選：{current_total} 場"
                     f"</div>", 
                     unsafe_allow_html=True
                 )
             with c_tip:
                 # 顯示操作教學
-                st.caption("💡 點選後請稍候，待畫面閃爍更新後，再勾選下一場。")
+                st.caption("勾選後請待場次數量更新後，再勾選下一場")
             
             # ---------------------------------------------
 
@@ -627,7 +628,7 @@ st.session_state.prev_selection_counts = current_selection_counts
 st.markdown("---")
 
 # --- 2. 行程週曆 ---
-st.subheader("2. 行程週曆 🗓️")
+st.subheader("🗓️ 你的活動行事曆 ")
 
 final_selected = proc_df[
     (proc_df['id'].isin(st.session_state.saved_ids)) & 
@@ -695,7 +696,7 @@ calendar(events=cal_events, options=calendar_options, key=f"main_calendar")
 st.markdown("---")
 
 # --- 3. 匯出功能 ---
-st.subheader("3. 帶走行程 🎒")
+st.subheader("🎒 匯出行事曆檔案 ")
 if not final_selected.empty:
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -707,19 +708,19 @@ if not final_selected.empty:
             if row['end_dt']: e.end = row['end_dt'] - timedelta(hours=8)
             e.location = str(row['地點'])
             cal_obj.events.add(e)
-        st.download_button("📅 匯出手機行事曆 (.ics)", data=cal_obj.serialize(), file_name="tibe_2026.ics", mime="text/calendar")
+        st.download_button("匯出google行事曆 (.ics)", data=cal_obj.serialize(), file_name="tibe_2026.ics", mime="text/calendar")
     
     with c2:
         cols = ["日期", "時間", "活動名稱", "地點", "備註"]
         v_cols = [c for c in cols if c in final_selected.columns]
         csv_data = final_selected[v_cols].to_csv(index=False).encode('utf-8-sig')
-        st.download_button("🖨️ 匯出表格 (.csv)", data=csv_data, file_name="tibe.csv", mime="text/csv")
+        st.download_button("匯出表格 (.csv)", data=csv_data, file_name="tibe.csv", mime="text/csv")
 
     with c3:
         txt = ""
         for _, row in final_selected.sort_values(by=['日期','時間']).iterrows():
             txt += f"{row['日期']} {row['時間']} | {row['活動名稱']} @ {row['地點']}\n"
-        st.download_button("💬 複製文字", data=txt, file_name="tibe.txt", mime="text/plain")
+        st.download_button("匯出文字檔", data=txt, file_name="tibe.txt", mime="text/plain")
 
 # ==========================================
 # 隱私權與資料聲明
