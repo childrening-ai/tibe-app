@@ -337,7 +337,7 @@ def analyze_image_robust(image):
         st.session_state.debug_ai_raw = f"Error: {str(e)}"
         return None
 
-# --- 加入購物車 Callback (明確回饋版) ---
+# --- 加入購物車 Callback (按鈕下方訊息版) ---
 def submit_book_callback():
     val_title = st.session_state.get("in_title", "").strip()
     val_pub = st.session_state.get("in_pub", "").strip()
@@ -345,6 +345,9 @@ def submit_book_callback():
     val_discount = st.session_state.get("in_discount", 100)
     val_note = st.session_state.get("in_note", "").strip()
     
+    # 清除舊的訊息
+    if "add_msg" in st.session_state: del st.session_state["add_msg"]
+
     # 計算折扣價
     try:
         p = float(val_price)
@@ -354,7 +357,7 @@ def submit_book_callback():
         calc_final = 0
 
     if not val_title:
-        st.error("❌ 請至少輸入書名")
+        st.session_state.add_msg = {"type": "error", "text": "❌ 請至少輸入書名"}
         return
 
     new_row = pd.DataFrame([{
@@ -373,15 +376,13 @@ def submit_book_callback():
     else:
         st.session_state.cart_data = pd.concat([st.session_state.cart_data, new_row], ignore_index=True)
     
-    # 存檔與回饋
+    # 存檔與設定回饋訊息
     if not st.session_state.get("is_guest", False):
         save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, st.session_state.cart_data)
-        
-        # 🔥 修改重點：更明確的視覺回饋
-        st.toast(f"✅ 成功！「{val_title}」已加入管理清單", icon="🎉")
-        
+        # 🔥 修改：將成功訊息存入 session_state
+        st.session_state.add_msg = {"type": "success", "text": f"✅ 已加入管理清單：{val_title}"}
     else:
-        st.toast(f"👻 (訪客) 「{val_title}」已暫存至清單", icon="✅")
+        st.session_state.add_msg = {"type": "success", "text": f"👻 (訪客) 已暫存：{val_title}"}
     
     # 清空輸入
     st.session_state["in_title"] = ""
@@ -481,7 +482,7 @@ total_spent = calc_price[df['狀態'].isin(['待購', '已購'])].sum()
 # --- 1. 新增書籍 ---
 with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
     
-    # AI 控制開關
+    # AI 控制開關 (保持不變)
     if has_ai:
         if st.toggle("📸 開啟 AI 智慧辨識 (Gemini 2.0)", value=False):
             st.info("💡 提示：手機拍攝書籍封面、或直接拍電腦螢幕上的博客來網頁皆可。")
@@ -493,7 +494,6 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
                     with st.spinner("AI 分析中..."):
                         image = Image.open(uploaded_file)
                         result = analyze_image_robust(image)
-                        
                         if result:
                             t_val = result.get("書名") or result.get("書籍名稱") or ""
                             st.session_state["in_title"] = str(t_val)
@@ -551,6 +551,14 @@ with st.expander("➕ 新增書籍 (點擊展開/收合)", expanded=False):
     with c8:
         st.write("")
         st.button("➕ 加入", type="primary", use_container_width=True, on_click=submit_book_callback)
+
+    # 🔥 新增：在按鈕正下方顯示回饋訊息
+    if "add_msg" in st.session_state and st.session_state.add_msg:
+        msg = st.session_state.add_msg
+        if msg["type"] == "error":
+            st.error(msg["text"])
+        else:
+            st.success(msg["text"])
 
 st.markdown("---")
 
