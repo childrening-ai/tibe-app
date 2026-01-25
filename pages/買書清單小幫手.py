@@ -430,6 +430,10 @@ if not st.session_state.is_logged_in:
                             st.session_state.user_id = input_id
                             st.session_state.user_pin = input_pin
                             st.session_state.cart_data = load_user_cart(input_id)
+                            
+                            # 🔥 關鍵修正：登入成功後，強制關閉訪客模式
+                            st.session_state.is_guest = False 
+                            
                             st.session_state.is_logged_in = True
                             st.rerun()
                         else:
@@ -623,7 +627,7 @@ else:
              st.button("💾 儲存 (訪客無法使用)", disabled=True, use_container_width=True)
         else:
             if st.button("💾 儲存修改", type="primary", use_container_width=True):
-                with st.spinner("同步運算中..."):
+                with st.spinner("正在同步雲端..."):
                     final_df = edited_df.drop(columns=["刪除"])
                     # 強制重算價格
                     final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
