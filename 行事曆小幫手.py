@@ -605,8 +605,8 @@ else:
                     
                     # 鎖住資訊欄位
                     "時間": st.column_config.TextColumn("時間", width="small", disabled=True),
-                    "活動名稱": st.column_config.TextColumn("活動名稱", width="large", disabled=True),
-                    "地點": st.column_config.TextColumn("地點", width="medium", disabled=True),
+                    "活動名稱": st.column_config.TextColumn("活動名稱", width="medium", disabled=True),
+                    "地點": st.column_config.TextColumn("地點", width="small", disabled=True),
                     "主講人": st.column_config.TextColumn("主講人", width="medium", disabled=True),
                     
                     # 🔥 修改 2：將 id 設為 None，讓它隱藏不顯示
@@ -615,7 +615,7 @@ else:
                 hide_index=True,
                 key=f"editor_{date_str}"
             )
-            
+
             visible_ids = day_df['id'].tolist()
             ticked_ids = edited_day_df[edited_day_df["參加"] == True]['id'].tolist()
             
