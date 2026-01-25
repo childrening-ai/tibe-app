@@ -731,20 +731,20 @@ if not final_selected.empty:
 # ==========================================
 # 隱私權與資料聲明
 # ==========================================
-st.markdown("<br><br>", unsafe_allow_html=True)
-with st.expander("ℹ️ 隱私權與使用聲明 (Privacy Policy)", expanded=False):
-    st.markdown("""
-    **1. 資料儲存：**
-    * 本應用程式僅在您選擇「登入」並按下「儲存」時，才會將您的行程資料儲存至中央資料庫。
-    * 所有使用者資料集中管理，以「暱稱 (User_ID)」區分。
+#st.markdown("<br><br>", unsafe_allow_html=True)
+#with st.expander("ℹ️ 隱私權與使用聲明 (Privacy Policy)", expanded=False):
+#    st.markdown("""
+#   **1. 資料儲存：**
+#    * 本應用程式僅在您選擇「登入」並按下「儲存」時，才會將您的行程資料儲存至中央資料庫。
+#    * 所有使用者資料集中管理，以「暱稱 (User_ID)」區分。
+#    
+#    **2. 訪客模式：**
+#    * 訪客模式下，您的所有操作僅保留在當前瀏覽器視窗中，關閉視窗後即自動清除。
+#
+#    **3. 免責聲明：**
+#    * 本系統活動資料蒐集自書展官方網站與公開資訊，僅供參考。
+#    * 活動時間、地點若有變動，請以主辦單位現場公告為準。
     
-    **2. 訪客模式：**
-    * 訪客模式下，您的所有操作僅保留在當前瀏覽器視窗中，關閉視窗後即自動清除。
-
-    **3. 免責聲明：**
-    * 本系統活動資料蒐集自書展官方網站與公開資訊，僅供參考。
-    * 活動時間、地點若有變動，請以主辦單位現場公告為準。
-    
-    **4. 專案資訊：**
-    * This app is a personal project designed for the 2026 Taipei International Book Exhibition.
-    """)
+#    **4. 專案資訊：**
+#    * This app is a personal project designed for the 2026 Taipei International Book Exhibition.
+#    """)
