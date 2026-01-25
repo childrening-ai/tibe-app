@@ -13,7 +13,7 @@ from PIL import Image
 st.set_page_config(page_title="買書小幫手", page_icon="📚", layout="wide")
 
 # ==========================================
-# 🎨 UI 美化工程 (暖陽珊瑚風格 - 統一標準版)
+# 🎨 UI 美化工程 (暖陽珊瑚風格 + 手機版面強制並排)
 # ==========================================
 st.markdown("""
     <style>
@@ -114,31 +114,47 @@ st.markdown("""
         /* 隱藏 Footer */
         footer {visibility: hidden;}
 
-        /* --- 🔥 12. 隱藏 DataEditor 內建功能列 (搜尋/放大) --- */
+        /* --- 7. 隱藏 DataEditor 內建功能列 --- */
         [data-testid="stElementToolbar"] {
             display: none !important;
         }
 
-        /* --- 13. 手機版面極致優化 --- */
+        /* ============================================================
+           🔥 關鍵修正：手機版強制並排與緊湊化 (Mobile Optimization)
+           ============================================================ */
         
-        /* A. 隱藏 Number Input 的加減按鈕 (STEPPER) */
-        div[data-testid="stNumberInput"] button {
-            display: none;
+        /* 1. 解除欄位的最小寬度限制，讓它們可以在手機上擠在一起 (不會變成垂直堆疊) */
+        [data-testid="column"] {
+            width: auto !important;
+            flex: 1 1 auto !important;
+            min-width: 1px !important; 
         }
-        /* 調整輸入框內的文字對齊與 padding，讓數字靠右或置中比較好讀 (可選) */
-        div[data-testid="stNumberInput"] input {
+        
+        /* 2. 隱藏 Number Input 的加減按鈕，並縮小內距 */
+        div[data-testid="stNumberInput"] button { display: none; }
+        div[data-testid="stNumberInput"] input { 
             text-align: center; 
-            padding-right: 0 !important;
+            padding: 0px 2px !important; 
         }
 
-        /* B. 縮小卡片內元件的垂直間距 (Gap) */
+        /* 3. 極致縮小卡片內的垂直間距 */
         div[data-testid="stVerticalBlock"] > div {
-            gap: 0.4rem !important; /* 原本約 1rem，強制縮小 */
+            gap: 0.2rem !important; 
         }
         
-        /* C. 讓 Checkbox 不換行，緊湊排列 */
+        /* 4. 調整 Checkbox 樣式，讓它不佔太多垂直空間 */
         div[data-testid="stCheckbox"] {
-            margin-bottom: -10px !important; /* 修正 Checkbox 下方多餘空白 */
+            margin-bottom: -15px !important; 
+            min-height: 0px !important;
+        }
+        div[data-testid="stCheckbox"] label {
+            min-height: 0px !important;
+        }
+        
+        /* 5. 調整 Text Input 的 placeholder 顏色與內距 */
+        input::placeholder {
+            color: #bbb !important;
+            font-size: 0.9rem;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -624,62 +640,56 @@ else:
     updated_rows = []
     indices_to_delete = []
 
-    # 🔥 核心修改：使用迴圈產生「緊湊版卡片」
+    # 🔥 核心修改：使用迴圈產生「強制並排卡片」
     for i, row in df.iterrows():
-        # 每一本書都是一個獨立的容器
         with st.container(border=True):
             
-            # --- 第一行：[ ] 刪除 (左) ｜ [ ] 已購 (右) ---
-            # 使用 [0.3, 0.7] 比例，讓刪除鈕只佔左邊一小塊
-            c1_1, c1_2 = st.columns([0.35, 0.65]) 
+            # --- 第一行：[刪除] (極窄) ｜ [已購] (寬) ---
+            # 比例設為 [0.25, 0.75] 讓刪除只佔一點點位置
+            c1_1, c1_2 = st.columns([0.25, 0.75]) 
             with c1_1:
-                is_del = st.checkbox("刪除", key=f"del_{i}")
+                is_del = st.checkbox("刪", key=f"del_{i}") # 標題改一個字"刪"省空間
                 if is_del: indices_to_delete.append(i)
             with c1_2:
-                # 狀態：勾選框
+                # 使用 HTML 自訂標籤讓 Checkbox 靠左對齊且緊湊
                 is_bought = st.checkbox("✅ 已購", value=(row["狀態"] == "已購"), key=f"status_{i}")
                 new_status = "已購" if is_bought else "待購"
 
-            # --- 第二行：書名 (左 2/3) ｜ 出版社 (右 1/3) ---
-            # 改用 text_input 以便同行排列，犧牲顯示完整度換取空間
-            c2_1, c2_2 = st.columns([2, 1.2]) 
+            # --- 第二行：書名 (70%) ｜ 出版社 (30%) ---
+            c2_1, c2_2 = st.columns([7, 3]) 
             with c2_1:
-                # 標題設為 collapsed (隱藏)，利用 placeholder 提示
-                new_title = st.text_input("書名", value=str(row["書名"]), label_visibility="collapsed", placeholder="書名...", key=f"title_{i}")
+                new_title = st.text_input("書名", value=str(row["書名"]), label_visibility="collapsed", placeholder="書名", key=f"title_{i}")
             with c2_2:
                 new_pub = st.text_input("出版社", value=str(row["出版社"]), label_visibility="collapsed", placeholder="出版社", key=f"pub_{i}")
 
             # --- 第三行：原價 ｜ 折數 ｜ 售價 ---
-            # 三欄均分
+            # 比例 [1, 1, 1.2]
             c3_1, c3_2, c3_3 = st.columns([1, 1, 1.2])
             
             with c3_1:
-                # 顯示標題 (label)，但因為 CSS 隱藏了按鈕，所以只會看到輸入框
-                new_price = st.number_input("💰 原價", value=int(row["定價"]), min_value=0, step=1, key=f"price_{i}")
+                # 只有 placeholder，沒有 label
+                new_price = st.number_input("原價", value=int(row["定價"]), min_value=0, step=1, label_visibility="collapsed", placeholder="原價", key=f"price_{i}")
             
             with c3_2:
-                new_discount = st.number_input("📉 折數", value=int(row["折數"]), min_value=1, max_value=100, step=1, key=f"disc_{i}")
+                new_discount = st.number_input("折數", value=int(row["折數"]), min_value=1, max_value=100, step=1, label_visibility="collapsed", placeholder="折", key=f"disc_{i}")
             
             with c3_3:
-                # 自動計算售價
                 current_calc = int(new_price * (new_discount / 100))
-                # 使用 HTML 讓售價看起來像是一個唯讀的數據塊，並加上標題
+                # 使用 HTML 顯示售價，字體調小一點以免換行
                 st.markdown(
                     f"""
-                    <div style="text-align: center; line-height: 1.2;">
-                        <span style="font-size: 0.8rem; color: #888;">🏷️ 售價</span><br>
-                        <span style="font-size: 1.1rem; font-weight: bold; color: #D32F2F;">${current_calc}</span>
+                    <div style="text-align: right; padding-top: 5px;">
+                        <span style="font-size: 0.8rem; color: #888;">售</span>
+                        <b style="font-size: 1.1rem; color: #D32F2F;">${current_calc}</b>
                     </div>
                     """, 
                     unsafe_allow_html=True
                 )
 
             # --- 第四行：備註 ---
-            new_note = st.text_input("備註", value=str(row["備註"]), placeholder="備註 (選填)...", label_visibility="collapsed", key=f"note_{i}")
+            new_note = st.text_input("備註", value=str(row["備註"]), placeholder="備註...", label_visibility="collapsed", key=f"note_{i}")
 
-            # ... (上面是第四行備註) ...
-
-            # 🔥 修正：只有「沒勾選刪除」的資料，才加入更新列表
+            # 收集資料 (這段保持不變，配合您的刪除邏輯)
             if not is_del:
                 updated_rows.append({
                     "書名": new_title,
@@ -711,7 +721,7 @@ else:
                     st.success("✅ 儲存成功！")
                     time.sleep(1)
                     st.rerun()
-                    
+
 # --- 3. 匯出功能 ---
 st.markdown("---")
 st.subheader("📤 下載願望書單")
