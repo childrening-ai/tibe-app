@@ -341,7 +341,7 @@ def load_master_data():
     except Exception as e:
         return None, str(e)
 
-# --- 使用者資料讀取 ---
+# --- 使用者資料讀取 (修正版：過濾空白幽靈 ID) ---
 def load_user_saved_ids(user_id):
     client = get_gspread_client()
     if not client: return []
@@ -351,9 +351,16 @@ def load_user_saved_ids(user_id):
         data = ws.get_all_values()
         if len(data) < 2: return []
         df = pd.DataFrame(data[1:], columns=data[0])
+        
         if "User_ID" in df.columns and "ID" in df.columns:
             user_data = df[df["User_ID"] == str(user_id)]
-            return user_data["ID"].tolist()
+            
+            # 🔥 關鍵修正：過濾掉 ID 是空字串的資料 (踢掉佔位用的空行)
+            # 1. 將 ID 欄位轉為字串並去除空白
+            clean_ids = user_data["ID"].fillna("").astype(str).str.strip()
+            # 2. 只回傳「不是空白」的 ID
+            return clean_ids[clean_ids != ""].tolist()
+            
         return []
     except Exception as e:
         print(f"讀取失敗: {e}")
@@ -538,14 +545,17 @@ if not st.session_state.is_logged_in:
     st.stop()
 
 # ==========================================
-# 🔥 安全性修補：跨頁面資料庫同步機制
+# 🔥 安全性修補：跨頁面資料庫同步機制 (含資料讀取)
 # ==========================================
 if st.session_state.is_logged_in and not st.session_state.get("synced_calendar", False):
-    # 強制在「行事曆資料庫」跑一次驗證/註冊流程
-    # 這會確保使用者從「買書幫手」過來時，行事曆這邊也會自動建立帳號
+    # 1. 執行登入驗證 (確保帳號存在)
     check_login(st.session_state.user_id, st.session_state.user_pin)
     
-    # 標記已同步
+    # 2. 🔥🔥🔥 關鍵補強：驗證後立刻「讀取舊資料」！ 🔥🔥🔥
+    # 如果這裡沒讀取，程式會以為你是空的，一存檔就會把舊資料洗掉
+    st.session_state.saved_ids = load_user_saved_ids(st.session_state.user_id)
+    
+    # 3. 標記已同步
     st.session_state.synced_calendar = True
 
 # ==========================================
