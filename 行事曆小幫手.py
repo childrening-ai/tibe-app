@@ -507,7 +507,7 @@ if not st.session_state.is_logged_in:
                     is_valid, saved_ids, msg = check_login(input_id, input_pin)
                     
                     if is_valid:
-                        st.session_state.saved_ids = saved_ids
+                        st.session_state.saved_ids = saved_ids if saved_ids is not None else []
                         st.session_state.user_id = input_id
                         st.session_state.user_pin = input_pin 
                         st.session_state.is_guest = False

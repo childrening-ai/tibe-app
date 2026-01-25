@@ -280,6 +280,11 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
 
         # 1. 準備要寫入的新資料
         new_records = current_df.copy()
+
+        # 🔥 關鍵修正：將 App 用的 "折數" 改名為 資料庫用的 "折扣"
+        if "折數" in new_records.columns:
+            new_records.rename(columns={"折數": "折扣"}, inplace=True)
+
         new_records["User_ID"] = str(user_id)
         new_records["Password"] = str(user_pin)
         
@@ -394,11 +399,6 @@ def submit_book_callback():
     st.session_state["in_pub"] = ""
     st.session_state["in_price"] = 0
     st.session_state["in_note"] = ""
-
-# ==========================================
-# 登入頁面
-# ==========================================
-has_ai = configure_genai()
 
 # ==========================================
 # 登入頁面 (垂直排列版)
