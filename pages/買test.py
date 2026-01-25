@@ -118,8 +118,32 @@ st.markdown("""
         [data-testid="stElementToolbar"] {
             display: none !important;
         }
+
+        /* --- 13. 手機版面極致優化 --- */
+        
+        /* A. 隱藏 Number Input 的加減按鈕 (STEPPER) */
+        div[data-testid="stNumberInput"] button {
+            display: none;
+        }
+        /* 調整輸入框內的文字對齊與 padding，讓數字靠右或置中比較好讀 (可選) */
+        div[data-testid="stNumberInput"] input {
+            text-align: center; 
+            padding-right: 0 !important;
+        }
+
+        /* B. 縮小卡片內元件的垂直間距 (Gap) */
+        div[data-testid="stVerticalBlock"] > div {
+            gap: 0.4rem !important; /* 原本約 1rem，強制縮小 */
+        }
+        
+        /* C. 讓 Checkbox 不換行，緊湊排列 */
+        div[data-testid="stCheckbox"] {
+            margin-bottom: -10px !important; /* 修正 Checkbox 下方多餘空白 */
+        }
     </style>
 """, unsafe_allow_html=True)
+
+
 
 # ==========================================
 # ⚙️ 設定區
@@ -600,86 +624,94 @@ else:
     updated_rows = []
     indices_to_delete = []
 
-    # 🔥 核心修改：使用迴圈產生「卡片」
+    # 🔥 核心修改：使用迴圈產生「緊湊版卡片」
     for i, row in df.iterrows():
-        # 每一本書都是一個獨立的容器 (卡片)
+        # 每一本書都是一個獨立的容器
         with st.container(border=True):
             
-            # --- 第一行：[ ] 刪除 ｜ [ ] 已購 ---
-            c1_1, c1_2 = st.columns([1, 1])
+            # --- 第一行：[ ] 刪除 (左) ｜ [ ] 已購 (右) ---
+            # 使用 [0.3, 0.7] 比例，讓刪除鈕只佔左邊一小塊
+            c1_1, c1_2 = st.columns([0.35, 0.65]) 
             with c1_1:
-                # 刪除勾選
-                is_del = st.checkbox("🗑️ 刪除", key=f"del_{i}")
+                is_del = st.checkbox("刪除", key=f"del_{i}")
                 if is_del: indices_to_delete.append(i)
             with c1_2:
-                # 狀態：轉為勾選框 (若原本是'已購'則預設勾選)
+                # 狀態：勾選框
                 is_bought = st.checkbox("✅ 已購", value=(row["狀態"] == "已購"), key=f"status_{i}")
                 new_status = "已購" if is_bought else "待購"
 
-            # --- 第二行：書名 (大/換行) ｜ 出版社 ---
-            c2_1, c2_2 = st.columns([2, 1]) # 書名欄位寬一點
+            # --- 第二行：書名 (左 2/3) ｜ 出版社 (右 1/3) ---
+            # 改用 text_input 以便同行排列，犧牲顯示完整度換取空間
+            c2_1, c2_2 = st.columns([2, 1.2]) 
             with c2_1:
-                # 使用 text_area 實現自動換行，height=68 約為兩行高度
-                new_title = st.text_area("書名", value=str(row["書名"]), height=68, label_visibility="collapsed", placeholder="書名", key=f"title_{i}")
+                # 標題設為 collapsed (隱藏)，利用 placeholder 提示
+                new_title = st.text_input("書名", value=str(row["書名"]), label_visibility="collapsed", placeholder="書名...", key=f"title_{i}")
             with c2_2:
                 new_pub = st.text_input("出版社", value=str(row["出版社"]), label_visibility="collapsed", placeholder="出版社", key=f"pub_{i}")
 
             # --- 第三行：原價 ｜ 折數 ｜ 售價 ---
+            # 三欄均分
             c3_1, c3_2, c3_3 = st.columns([1, 1, 1.2])
+            
             with c3_1:
-                new_price = st.number_input("原價", value=int(row["定價"]), min_value=0, step=10, key=f"price_{i}")
+                # 顯示標題 (label)，但因為 CSS 隱藏了按鈕，所以只會看到輸入框
+                new_price = st.number_input("💰 原價", value=int(row["定價"]), min_value=0, step=1, key=f"price_{i}")
+            
             with c3_2:
-                new_discount = st.number_input("折數", value=int(row["折數"]), min_value=1, max_value=100, step=1, key=f"disc_{i}")
+                new_discount = st.number_input("📉 折數", value=int(row["折數"]), min_value=1, max_value=100, step=1, key=f"disc_{i}")
+            
             with c3_3:
-                # 自動計算售價 (顯示用)
+                # 自動計算售價
                 current_calc = int(new_price * (new_discount / 100))
+                # 使用 HTML 讓售價看起來像是一個唯讀的數據塊，並加上標題
                 st.markdown(
                     f"""
-                    <div style="background-color: #FFF3E0; border: 1px solid #FF8C69; border-radius: 8px; text-align: center; padding: 5px 0; margin-top: 2px;">
-                        <span style="font-size: 0.8rem; color: #E65100;">售價</span>
-                        <b style="font-size: 1.1rem; color: #BF360C;">${current_calc}</b>
+                    <div style="text-align: center; line-height: 1.2;">
+                        <span style="font-size: 0.8rem; color: #888;">🏷️ 售價</span><br>
+                        <span style="font-size: 1.1rem; font-weight: bold; color: #D32F2F;">${current_calc}</span>
                     </div>
-                    """, unsafe_allow_html=True
+                    """, 
+                    unsafe_allow_html=True
                 )
 
             # --- 第四行：備註 ---
-            new_note = st.text_input("備註", value=str(row["備註"]), placeholder="備註...", label_visibility="collapsed", key=f"note_{i}")
+            new_note = st.text_input("備註", value=str(row["備註"]), placeholder="備註 (選填)...", label_visibility="collapsed", key=f"note_{i}")
 
-            # 收集這本書的新資料
-            updated_rows.append({
-                "書名": new_title,
-                "出版社": new_pub,
-                "定價": new_price,
-                "折數": new_discount,
-                "折扣價": current_calc,
-                "狀態": new_status,
-                "備註": new_note
-            })
+            # ... (上面是第四行備註) ...
 
-    # --- 底部按鈕區 (移出迴圈外) ---
+            # 🔥 修正：只有「沒勾選刪除」的資料，才加入更新列表
+            if not is_del:
+                updated_rows.append({
+                    "書名": new_title,
+                    "出版社": new_pub,
+                    "定價": new_price,
+                    "折數": new_discount,
+                    "折扣價": current_calc,
+                    "狀態": new_status,
+                    "備註": new_note
+                })
+
+    # --- 底部按鈕區 ---
     st.write("")
     if st.session_state.is_guest:
-         st.button("💾 儲存 (訪客無法使用)", disabled=True, use_container_width=True)
+         st.button("💾 儲存修改 (訪客無法使用)", disabled=True, use_container_width=True)
     else:
         # 使用 callback 機制處理存檔
         if st.button("💾 儲存到雲端", type="primary", use_container_width=True):
-            with st.spinner("正在同步..."):
+            with st.spinner("正在更新資料庫..."):
                 # 1. 將收集到的 dict 轉回 DataFrame
+                # 因為上面已經 filter 過了，這裡直接轉就是最終結果
                 new_df = pd.DataFrame(updated_rows)
                 
-                # 2. 處理刪除 (根據 index 移除)
-                if indices_to_delete:
-                    new_df = new_df.drop(indices_to_delete).reset_index(drop=True)
-                
-                # 3. 更新 Session State
+                # 2. 更新 Session State
                 st.session_state.cart_data = new_df
                 
-                # 4. 寫入雲端
+                # 3. 寫入雲端
                 if save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, new_df):
                     st.success("✅ 儲存成功！")
                     time.sleep(1)
                     st.rerun()
-
+                    
 # --- 3. 匯出功能 ---
 st.markdown("---")
 st.subheader("📤 下載願望書單")
