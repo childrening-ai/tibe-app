@@ -283,7 +283,7 @@ def get_gspread_client():
         print(f"連線錯誤: {e}")
         return None
 
-# --- 資料讀取 (修正 ID 重複問題版) ---
+# --- 資料讀取 (自動抓取所有分頁版) ---
 @st.cache_data(ttl=300)
 def load_master_data():
     client = get_gspread_client()
@@ -294,14 +294,26 @@ def load_master_data():
         all_frames = []
         STANDARD_COLS = ["日期", "時間", "活動名稱", "地點", "主講人", "主持人", "類型", "備註", "詳細內容"]
 
-        for ws_name in WORKSHEETS_TO_LOAD:
+        # 🔥 修改點 1：取得該試算表內「所有的」分頁物件
+        all_worksheets = spreadsheet.worksheets()
+
+        for ws in all_worksheets:
+            ws_name = ws.title
+            
+            # 🔥 修改點 2：過濾掉不相關的分頁 (例如存使用者的 users，或是空白預設頁)
+            # 如果您的主表裡面沒有放 users 資料，這行其實也可以留著當保險
+            if ws_name in ["users", "工作表1", "樣板", "Sheet1"]: 
+                continue
+
             try:
-                worksheet = spreadsheet.worksheet(ws_name)
-                data = worksheet.get_all_values()
-                if len(data) < 2: continue
+                data = ws.get_all_values()
+                if len(data) < 2: continue # 跳過沒資料的分頁
                 
                 df = pd.DataFrame(data[1:], columns=data[0])
+                
+                # 將「分頁名稱」作為「來源」，這樣您就知道是哪個出版社的活動
                 df['來源'] = ws_name 
+                
                 df.columns = [c.strip() for c in df.columns]
                 
                 if "主講人" not in df.columns and "講者" in df.columns:
@@ -311,11 +323,9 @@ def load_master_data():
                     if col not in df.columns: df[col] = "" 
                 
                 df = df.fillna("")
-                
-                # 注意：原本在這裡產生 ID 的程式碼已移除
-                
                 all_frames.append(df)
             except Exception as e:
+                print(f"分頁 {ws_name} 讀取失敗: {e}")
                 pass
 
         if not all_frames: return pd.DataFrame(), "無資料"
@@ -323,8 +333,7 @@ def load_master_data():
         # 合併所有資料
         final_df = pd.concat(all_frames, ignore_index=True)
         
-        # 🔥 關鍵修改：在合併後，加入「流水號 (x.name)」來確保 ID 絕對唯一
-        # 這樣就算名稱、時間一樣，因為列數不同，ID 也會不同
+        # 產生唯一 ID
         final_df['id'] = final_df.apply(lambda x: f"{x['日期']}_{x['時間']}_{x['活動名稱']}_{x.name}", axis=1)
         
         return final_df, "Success"
@@ -604,7 +613,7 @@ else:
                 day_df.insert(0, "參加", day_df['id'].isin(st.session_state.saved_ids))
             
             # 🔥 修改 1：要把 "id" 加回來，不然程式抓不到是哪一場
-            cols_to_show = ["參加", "時間", "活動名稱", "地點", "主講人", "id"]
+            cols_to_show = ["參加", "時間", "活動名稱","來源", "地點", "主講人", "id"]
 
             edited_day_df = st.data_editor(
                 day_df[cols_to_show], 
@@ -614,6 +623,7 @@ else:
                     # 鎖住資訊欄位
                     "時間": st.column_config.TextColumn("時間", width="small", disabled=True),
                     "活動名稱": st.column_config.TextColumn("活動名稱", width="medium", disabled=True),
+                    "來源": st.column_config.TextColumn("來源", width="small", disabled=True),
                     "地點": st.column_config.TextColumn("地點", width="small", disabled=True),
                     "主講人": st.column_config.TextColumn("主講人", width="medium", disabled=True),
                     
