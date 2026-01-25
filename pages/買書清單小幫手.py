@@ -113,6 +113,11 @@ st.markdown("""
         
         /* 隱藏 Footer */
         footer {visibility: hidden;}
+
+        /* --- 🔥 12. 隱藏 DataEditor 內建功能列 (搜尋/放大) --- */
+        [data-testid="stElementToolbar"] {
+            display: none !important;
+        }
     </style>
 """, unsafe_allow_html=True)
 
@@ -579,7 +584,7 @@ else:
             padding: 12px 15px; 
             border-radius: 12px; 
             border: 1px solid #FFE0B2;
-            margin-bottom: 15px;
+            margin-bottom: 25px;
             font-size: 1rem;
             color: #5C4B45;
         ">
