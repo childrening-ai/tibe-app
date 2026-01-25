@@ -12,7 +12,7 @@ import json
 
 # 1. 頁面基本設定
 st.set_page_config(
-    page_title="2026 書展排程神器",
+    page_title="2026台北國際書展行事曆小幫手",
     page_icon="📅",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -237,7 +237,7 @@ st.markdown("""
             box-shadow: none !important;
             opacity: 1 !important;
         }
-        
+
         /* 隱藏 DataEditor 右上角的搜尋/放大功能列 */
         [data-testid="stElementToolbar"] { display: none !important; }
 
@@ -468,23 +468,23 @@ def check_login(user_id, input_pin):
 # 登入頁面 (修改後的版本)
 # ==========================================
 if not st.session_state.is_logged_in:
-    st.title("📅 2026 書展排程神器")
+    st.title("📅 2026 台北國際書展行事曆小幫手")
     intro_col, login_col = st.columns([0.6, 0.4])
     with intro_col:
         st.markdown("""
         ### 歡迎使用！
-        **功能特色：**
-        * ✅ **自動排程**：勾選活動，自動生成週曆
-        * ✅ **雲端同步**：登入後可儲存您的專屬行程
-        * ✅ **離線帶著走**：支援匯出手機行事曆 (.ics)
+        **功能**
+        * 勾選活動即時生成行事曆
+        * 建立帳號可隨時儲存與修改行事曆
+        * 支援匯出google行事曆或文字表格檔案
         """)
     with login_col:
         with st.container(border=True):
             st.subheader("🔐 用戶登入")
             with st.form("login_form"):
-                input_id = st.text_input("👤 暱稱 / 帳號", placeholder="例如: Kevin")
-                input_pin = st.text_input("🔑 密碼 (PIN)", type="password", placeholder="設定 4-6 碼密碼")
-                st.caption("※ 若暱稱是第一次使用，系統將自動以此密碼註冊。")
+                input_id = st.text_input("👤 帳號", placeholder="限輸入英文或數字")
+                input_pin = st.text_input("🔑 密碼", type="password", placeholder="限輸入英文或數字")
+                st.caption("※ 若帳號是第一次使用，系統將自動以此密碼註冊。")
                 submit = st.form_submit_button("🚀 登入 / 註冊", use_container_width=True)
             
             if st.button("👀 免登入試用", use_container_width=True):
@@ -508,7 +508,7 @@ if not st.session_state.is_logged_in:
                         else:
                             st.error(msg)
                 else:
-                    st.error("請輸入暱稱與密碼")
+                    st.error("請輸入帳號與密碼")
     st.stop()
 
 # ==========================================
@@ -541,12 +541,12 @@ all_selected_ids = []
 current_selection_counts = {}
 
 # 標題
-st.title("📅 2026 書展排程神器")
+st.title("2026台北國際書展行事曆小幫手")
 if st.session_state.is_guest:
     st.caption("訪客模式：資料不會儲存")
 
 # --- 1. 勾選活動 (優化版：提示與統計前置) ---
-st.subheader("1. 勾選活動 ✅")
+st.subheader("✅ 勾選活動 ")
 
 with st.expander("🔎 進階篩選", expanded=False):
     c1, c2, c3 = st.columns(3)
