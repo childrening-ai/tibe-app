@@ -585,14 +585,28 @@ expected_cols = ["書名", "出版社", "定價", "折扣", "折扣價", "狀態
 for c in expected_cols:
     if c not in df.columns: df[c] = "" 
 
-# 轉換數值
-df['定價'] = pd.to_numeric(df['定價'], errors='coerce').fillna(0)
-df['折扣價'] = pd.to_numeric(df['折扣價'], errors='coerce').fillna(0)
-if "折數" not in df.columns:
-    if "折扣" in df.columns:
-        df["折數"] = (pd.to_numeric(df["折扣"], errors='coerce').fillna(1.0) * 100).astype(int)
-    else:
-        df["折數"] = 100
+# 轉換數值 (定價與折扣價)
+df['定價'] = pd.to_numeric(df['定價'], errors='coerce').fillna(0).astype(int)
+df['折扣價'] = pd.to_numeric(df['折扣價'], errors='coerce').fillna(0).astype(int)
+
+# 🔥🔥🔥 修正災難的「7900」問題：智慧型折數校正 🔥🔥🔥
+def normalize_discount(val):
+    try:
+        v = float(val)
+        if v > 100: return int(v / 100)    # 修正 7900 -> 79
+        if v <= 1 and v > 0: return int(v * 100) # 相容舊資料 0.79 -> 79
+        if v == 0: return 100              # 0 或空值 -> 預設 100 (不打折)
+        return int(v)                      # 正常資料 79 -> 79
+    except:
+        return 100 # 萬一有亂碼，預設不打折
+
+# 應用校正邏輯
+# 先確認是用哪個欄位名稱 (有些舊資料可能叫 "折扣")
+target_col = "折數" if "折數" in df.columns else "折扣"
+if target_col in df.columns:
+    df["折數"] = df[target_col].apply(normalize_discount)
+else:
+    df["折數"] = 100
 
 # 計算金額 (供下方統計使用)
 calc_price = df['折扣價'].where(df['折扣價'] > 0, df['定價'])
