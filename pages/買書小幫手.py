@@ -315,13 +315,17 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
             # 空表，加入標題
             final_data_to_upload.append(TARGET_COLS)
 
-        # 3. 處理「我的新資料」 (只用 Pandas 做資料整理，不做合併)
+        # 3. 處理「我的新資料」
         # 確保 current_df 是乾淨的
         df_to_save = current_df.copy().reset_index(drop=True)
         
         if "折數" in df_to_save.columns:
             df_to_save.rename(columns={"折數": "折扣"}, inplace=True)
         
+        # 🔥 防呆第一道：移除重複的欄位 (這通常是報錯的主因)
+        # 如果因為之前的操作導致有兩個 "定價" 欄位，這行會只留一個
+        df_to_save = df_to_save.loc[:, ~df_to_save.columns.duplicated()]
+
         df_to_save["User_ID"] = str(user_id)
         df_to_save["Password"] = str(user_pin)
         
@@ -330,19 +334,24 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
             if col not in df_to_save.columns: df_to_save[col] = ""
         
         # -----------------------------------------------------------
-        # 🔥🔥🔥 新增修正：強制數值欄位為 0 (防止變成空字串造成移位) 🔥🔥🔥
+        # 🔥🔥🔥 修正版：強制數值欄位為 0 (含防錯機制) 🔥🔥🔥
         # -----------------------------------------------------------
         numeric_cols = ["定價", "折扣", "折扣價"]
         for col in numeric_cols:
             if col in df_to_save.columns:
-                # 1. 強制轉為數字 (錯誤的變 NaN)
-                # 2. 把 NaN 填成 0
-                # 3. 轉成整數 (int) 去除小數點
-                df_to_save[col] = pd.to_numeric(df_to_save[col], errors='coerce').fillna(0).astype(int)
+                # 1. 先轉成字串 (astype(str))：這能解決 "arg must be a list..." 的問題
+                #    因為不管原本是數字還是空物件，轉成字串後 Pandas 就能統一處理
+                # 2. 再轉數字 (to_numeric)
+                # 3. 最後補 0 並轉整數
+                try:
+                    df_to_save[col] = pd.to_numeric(df_to_save[col].astype(str), errors='coerce').fillna(0).astype(int)
+                except Exception as e:
+                    # 萬一真的轉不過，就強制全填 0，保證不報錯
+                    print(f"欄位 {col} 轉型失敗: {e}")
+                    df_to_save[col] = 0
         # -----------------------------------------------------------
 
-        # 依照 TARGET_COLS 的順序排列，並將所有 NaN 填為空字串
-        # (因為上面已經把數字欄位處理好了，這裡的 fillna("") 只會影響文字欄位，如書名、備註)
+        # 依照 TARGET_COLS 的順序排列
         df_to_save = df_to_save[TARGET_COLS].fillna("")
         
         # 關鍵：把 DataFrame 轉成純 List
