@@ -249,7 +249,7 @@ def load_user_cart(user_id):
     except:
         return pd.DataFrame()
 
-# --- 儲存功能 (修正版：雙重重置 Index 防止報錯) ---
+# --- 儲存功能 (列表過濾版：繞過 Pandas 索引機制) ---
 def save_user_cart_to_cloud(user_id, user_pin, current_df):
     client = get_gspread_client()
     if not client: return False
@@ -257,33 +257,50 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
         sh = client.open(SHEET_NAME)
         ws = sh.worksheet(WORKSHEET_MASTER_CART)
         
-        # 1. 強制重置傳入資料的索引 (您原本加的)
+        # 1. 處理當前使用者的資料 (重置索引)
         current_df = current_df.reset_index(drop=True)
         
         TARGET_COLS = ["User_ID", "Password", "書名", "出版社", "定價", "折扣", "折扣價", "狀態", "備註"]
         
-        existing_data = ws.get_all_values()
+        # 2. 讀取雲端所有資料 (這是 List of Lists，不是 DataFrame)
+        raw_data = ws.get_all_values()
         
-        df_clean = pd.DataFrame(columns=TARGET_COLS)
-        has_data = False
-        if existing_data and len(existing_data) > 0:
-            if len(existing_data[0]) > 0:
-                if str(existing_data[0][0]).strip() == "User_ID":
-                    has_data = True
-
-        if has_data and len(existing_data) > 1:
+        other_people_data = []
+        
+        # 3. 🔥 關鍵差異：使用 Python List 直接過濾 (完全避開 Pandas Index 問題)
+        if raw_data and len(raw_data) > 1:
+            header = raw_data[0]
+            
+            # 找出 "User_ID" 在第幾欄 (防呆：如果沒有這欄就不讀了)
+            if "User_ID" in header:
+                uid_idx = header.index("User_ID")
+                
+                # 迴圈檢查每一列 (這是最純粹的 Python，絕對不會報 Reindexing 錯)
+                for row in raw_data[1:]:
+                    # 確保這一列長度夠長，且 User_ID 不等於目前使用者
+                    if len(row) > uid_idx and str(row[uid_idx]).strip() != str(user_id):
+                        other_people_data.append(row)
+            
+        # 4. 將篩選好的 List 轉為 DataFrame
+        if other_people_data:
+            # 為了防止欄位數不一致，這裡做一個保險
             try:
-                df_clean = pd.DataFrame(existing_data[1:], columns=TARGET_COLS)
-            except ValueError:
-                pass
-        
-        # 🔥🔥🔥 請確認這一行是「靠左」的 (不要縮在 try 裡面) 🔥🔥🔥
-        # 這行會強制把所有可能造成報錯的重複索引都洗掉
-        df_clean = df_clean.reset_index(drop=True)
+                df_keep = pd.DataFrame(other_people_data, columns=raw_data[0])
+            except:
+                # 萬一欄位對不上，就只取前幾欄
+                df_keep = pd.DataFrame(other_people_data)
+                df_keep = df_keep.iloc[:, :len(TARGET_COLS)]
+                df_keep.columns = TARGET_COLS[:df_keep.shape[1]]
+        else:
+            df_keep = pd.DataFrame(columns=TARGET_COLS)
 
-        # 準備要寫入的新資料
+        # 確保 df_keep 也有標準欄位
+        for col in TARGET_COLS:
+            if col not in df_keep.columns: df_keep[col] = ""
+        df_keep = df_keep[TARGET_COLS]
+
+        # 5. 準備要寫入的新資料
         new_records = current_df.copy()
-
         if "折數" in new_records.columns:
             new_records.rename(columns={"折數": "折扣"}, inplace=True)
 
@@ -294,20 +311,11 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
             if col not in new_records.columns: new_records[col] = ""
         new_records = new_records[TARGET_COLS]
 
-        # 保留「其他人」的資料
-        if not df_clean.empty and "User_ID" in df_clean.columns:
-            # 🔥🔥🔥 終極修正：加上 .values 🔥🔥🔥
-            # 這會把篩選條件變成單純的 True/False 清單，強制 Pandas 忽略索引問題
-            mask = df_clean["User_ID"].astype(str) != str(user_id)
-            df_keep = df_clean[mask.values] 
-        else:
-            df_keep = pd.DataFrame(columns=TARGET_COLS)
-
-        # 合併
+        # 6. 合併 (這時候 df_keep 是全新的，new_records 也是全新的，合併絕對安全)
         df_final = pd.concat([df_keep, new_records], ignore_index=True)
         df_final = df_final.fillna("") 
         
-        # 寫回
+        # 7. 寫回
         final_values = [TARGET_COLS] + df_final.values.tolist()
         ws.clear()
         ws.update(range_name='A1', values=final_values)
