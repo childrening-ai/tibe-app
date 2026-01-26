@@ -574,12 +574,15 @@ if not st.session_state.is_logged_in:
 # ==========================================
 # 🔥 安全性修補：跨頁面資料庫同步機制 (含資料讀取)
 # ==========================================
-if st.session_state.is_logged_in and not st.session_state.get("synced_calendar", False):
-    # 1. 執行登入驗證 (確保帳號存在)
+# 修改前：if st.session_state.is_logged_in and not st.session_state.get("synced_calendar", False):
+# 修改後：加上 and not st.session_state.get("is_guest", False)
+
+if st.session_state.is_logged_in and not st.session_state.get("is_guest", False) and not st.session_state.get("synced_calendar", False):
+    
+    # 1. 執行登入驗證
     check_login(st.session_state.user_id, st.session_state.user_pin)
     
-    # 2. 🔥🔥🔥 關鍵補強：驗證後立刻「讀取舊資料」！ 🔥🔥🔥
-    # 如果這裡沒讀取，程式會以為你是空的，一存檔就會把舊資料洗掉
+    # 2. 讀取舊資料
     st.session_state.saved_ids = load_user_saved_ids(st.session_state.user_id)
     
     # 3. 標記已同步
