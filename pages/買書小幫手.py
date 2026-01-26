@@ -171,6 +171,10 @@ def get_gspread_client():
 
 # --- 統一登入驗證 (買書版：會去檢查行事曆資料庫) ---
 def check_login(user_id, input_pin):
+    # 🔥 差異點：這裡少了防止 Guest 註冊的守門員
+    if str(user_id).strip().lower() == "guest":
+        return False, "⚠️ 'Guest' 無法使用，請使用其他帳號！"
+    
     client = get_gspread_client()
     if not client: return False, "連線失敗"
     
@@ -773,8 +777,10 @@ else:
                 # 移除暫時的欄位，還原成資料庫格式
                 final_df = kept_data.drop(columns=["刪除", "已購"])
                 
-                # 重算價格
-                final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
+                # 🔥 差異點：這裡要改用安全運算，防止刪除時因為資料格式錯誤而崩潰
+                p_safe = pd.to_numeric(final_df["定價"], errors='coerce').fillna(0)
+                d_safe = pd.to_numeric(final_df["折數"], errors='coerce').fillna(0)
+                final_df["折扣價"] = (p_safe * (d_safe / 100)).fillna(0).astype(int)
                 
                 st.session_state.cart_data = final_df
                 if not st.session_state.is_guest:
