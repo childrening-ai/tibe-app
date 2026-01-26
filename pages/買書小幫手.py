@@ -770,8 +770,13 @@ else:
                     # 移除暫時的欄位
                     final_df = current_edit.drop(columns=["刪除", "已購"])
                     
-                    # 強制重算價格
-                    final_df["折扣價"] = (final_df["定價"] * (final_df["折數"] / 100)).astype(int)
+                    # 🔥🔥🔥 請替換原本那一行「重算價格」為以下這三行 🔥🔥🔥
+                    # 1. 先強制轉成數字 (防呆)
+                    p_safe = pd.to_numeric(final_df["定價"], errors='coerce').fillna(0)
+                    d_safe = pd.to_numeric(final_df["折數"], errors='coerce').fillna(0)
+                    # 2. 安全運算
+                    final_df["折扣價"] = (p_safe * (d_safe / 100)).fillna(0).astype(int)
+                    # ----------------------------------------------------
                     
                     st.session_state.cart_data = final_df
                     if save_user_cart_to_cloud(st.session_state.user_id, st.session_state.user_pin, final_df):
