@@ -451,9 +451,18 @@ if not st.session_state.is_logged_in:
         if submit:
             if input_id and input_pin:
                 with st.spinner("驗證中..."):
+                    # 呼叫驗證函式
                     is_valid, msg = check_login(input_id, input_pin)
                     
                     if is_valid:
+                        # 🔥🔥🔥 關鍵修正：登入成功時，強制清除介面殘留訊息！ 🔥🔥🔥
+                        # 這確保新進來的使用者，不會看到上一個人的「✅ 已加入...」或輸入框內容
+                        keys_to_clean = ["add_msg", "in_title", "in_pub", "in_price", "in_discount", "in_note", "debug_ai_raw"]
+                        for key in keys_to_clean:
+                            if key in st.session_state:
+                                del st.session_state[key]
+                        # -------------------------------------------------------
+
                         # 登入成功，讀取資料
                         st.session_state.user_id = input_id
                         st.session_state.user_pin = input_pin
