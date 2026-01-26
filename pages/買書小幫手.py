@@ -553,19 +553,23 @@ st.sidebar.markdown("---")
 if st.sidebar.button("🚪 登出 / 結束試用", use_container_width=True):
     # 1. 清除核心登入狀態
     st.session_state.is_logged_in = False
+    st.session_state.is_guest = False
     st.session_state.user_id = ""
+    
+    # 2. 清除買書專用變數
     st.session_state.cart_data = pd.DataFrame()
     
-    # 2. 清除同步標記
-    if "synced_shopping" in st.session_state:
-        del st.session_state.synced_shopping
-    if "synced_calendar" in st.session_state:
-        del st.session_state.synced_calendar
+    # 3. 清除同步標記
+    if "synced_shopping" in st.session_state: del st.session_state.synced_shopping
+    if "synced_calendar" in st.session_state: del st.session_state.synced_calendar
         
-    # 3. 🔥🔥🔥 關鍵修正：徹底清除殘留的輸入框與訊息 🔥🔥🔥
-    # 這些 key 對應到 text_input 的 key 和回饋訊息
-    keys_to_clear = ["add_msg", "in_title", "in_pub", "in_price", "in_discount", "in_note", "debug_ai_raw"]
-    for key in keys_to_clear:
+    # 4. 🔥🔥🔥 關鍵修正：清理所有介面殘留 (含行事曆殘留) 🔥🔥🔥
+    # 這邊把所有可能的暫存變數都列出來一次殺乾淨
+    keys_to_clean = [
+        "add_msg", "in_title", "in_pub", "in_price", "in_discount", "in_note", "debug_ai_raw", # 買書的
+        "saved_ids", "save_success_msg" # 行事曆的 (順手清一下)
+    ]
+    for key in keys_to_clean:
         if key in st.session_state:
             del st.session_state[key]
         

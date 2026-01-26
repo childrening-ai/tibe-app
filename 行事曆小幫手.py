@@ -599,19 +599,26 @@ with st.sidebar:
         st.success(f"👤 {st.session_state.user_id}")
     st.markdown("---")
     if st.button("🚪 登出 / 結束試用", use_container_width=True):
-        # 1. 清除登入狀態
+        # 1. 清除核心登入狀態
         st.session_state.is_logged_in = False
         st.session_state.is_guest = False
         st.session_state.user_id = ""
+        
+        # 2. 清除行事曆專用變數
         st.session_state.saved_ids = []
         st.session_state.save_success_msg = None
+        st.session_state.calendar_focus_date = "2026-02-04" # 重置日期
         
-        # 🔥 關鍵修正：把「已同步」的標記全部移除或重置！
-        # 這樣下一個登入的人，才會被視為「尚未同步」，程式才會重新執行補登
-        if "synced_shopping" in st.session_state:
-            del st.session_state.synced_shopping
-        if "synced_calendar" in st.session_state:
-            del st.session_state.synced_calendar
+        # 3. 清除同步標記 (讓下次登入重新觸發同步)
+        if "synced_shopping" in st.session_state: del st.session_state.synced_shopping
+        if "synced_calendar" in st.session_state: del st.session_state.synced_calendar
+
+        # 4. 🔥🔥🔥 關鍵修正：幫「買書小幫手」清理戰場 🔥🔥🔥
+        # 這些是買書程式留下的暫存，必須在這裡一併刪除，不然下一個人會看到
+        keys_to_clean_shopping = ["add_msg", "in_title", "in_pub", "in_price", "in_discount", "in_note", "debug_ai_raw", "cart_data"]
+        for key in keys_to_clean_shopping:
+            if key in st.session_state:
+                del st.session_state[key]
 
         # 2. 重新整理
         st.rerun()
