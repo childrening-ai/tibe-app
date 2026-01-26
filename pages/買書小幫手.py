@@ -328,11 +328,24 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
         # 補齊欄位
         for col in TARGET_COLS:
             if col not in df_to_save.columns: df_to_save[col] = ""
-            
+        
+        # -----------------------------------------------------------
+        # 🔥🔥🔥 新增修正：強制數值欄位為 0 (防止變成空字串造成移位) 🔥🔥🔥
+        # -----------------------------------------------------------
+        numeric_cols = ["定價", "折扣", "折扣價"]
+        for col in numeric_cols:
+            if col in df_to_save.columns:
+                # 1. 強制轉為數字 (錯誤的變 NaN)
+                # 2. 把 NaN 填成 0
+                # 3. 轉成整數 (int) 去除小數點
+                df_to_save[col] = pd.to_numeric(df_to_save[col], errors='coerce').fillna(0).astype(int)
+        # -----------------------------------------------------------
+
         # 依照 TARGET_COLS 的順序排列，並將所有 NaN 填為空字串
+        # (因為上面已經把數字欄位處理好了，這裡的 fillna("") 只會影響文字欄位，如書名、備註)
         df_to_save = df_to_save[TARGET_COLS].fillna("")
         
-        # 🔥 關鍵：把 DataFrame 轉成純 List，不要用 Pandas 做合併
+        # 關鍵：把 DataFrame 轉成純 List
         my_records_list = df_to_save.values.tolist()
         
         # 4. 合併 (List + List) -> 絕對不會報 Index 錯
