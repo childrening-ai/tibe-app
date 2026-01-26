@@ -446,46 +446,73 @@ def parse_datetime_range(date_str, time_str):
     except:
         return None, None
 
-# --- 🔥 修正版：登入驗證函式 (行事曆專用 - 含自動寫入功能) ---
+# --- 統一登入驗證 (行事曆版：會去檢查買書資料庫) ---
 def check_login(user_id, input_pin):
     client = get_gspread_client()
     if not client: return False, [], "連線失敗"
     
+    user_id = str(user_id).strip()
+    input_pin = str(input_pin).strip()
+    
     try:
-        sh = client.open(SHEET_NAME_USERS_DB)
-        ws = sh.worksheet(WORKSHEET_USERS_TAB)
-        data = ws.get_all_values()
-        
-        # 定義標準欄位
+        # --- 1. 連線到「行事曆」資料庫 (自己家) ---
+        sh_cal = client.open(SHEET_NAME_USERS_DB)
+        try:
+            ws_cal = sh_cal.worksheet(WORKSHEET_USERS_TAB)
+        except:
+            ws_cal = sh_cal.add_worksheet(title=WORKSHEET_USERS_TAB, rows=1000, cols=10)
+
+        data_cal = ws_cal.get_all_values()
         HEADERS = ["User_ID", "Password", "ID", "日期", "時間", "活動名稱", "地點"]
         
-        # 防呆：如果是空表，先補標題
-        if not data:
-            ws.update(range_name='A1', values=[HEADERS])
-            data = [HEADERS]
+        if not data_cal:
+            ws_cal.update(range_name='A1', values=[HEADERS])
+            data_cal = [HEADERS]
 
-        df = pd.DataFrame(data[1:], columns=data[0])
+        df_cal = pd.DataFrame(data_cal[1:], columns=data_cal[0])
         
-        if "User_ID" in df.columns:
-            user_rows = df[df["User_ID"] == str(user_id)]
-            
+        # --- 2. 檢查自己家是否有此帳號 ---
+        if "User_ID" in df_cal.columns:
+            user_rows = df_cal[df_cal["User_ID"] == user_id]
             if not user_rows.empty:
-                # --- 舊帳號：檢查密碼 ---
                 stored_pin = str(user_rows.iloc[0]["Password"]).strip()
-                if stored_pin == "" or stored_pin == str(input_pin).strip():
+                if stored_pin == "" or stored_pin == input_pin:
                     return True, user_rows["ID"].tolist(), "登入成功"
                 else:
-                    return False, [], "⚠️ 密碼錯誤，或是此帳號已被他人使用！"
-            else:
-                # --- 🔥 這裡就是關鍵！新帳號要立刻寫入資料庫佔位 ---
-                # 準備一列資料：[帳號, 密碼, 空白...]
-                new_row = [str(user_id), str(input_pin)] + [""] * (len(HEADERS) - 2)
-                ws.append_row(new_row)
-                
-                # 回傳空清單 (因為新帳號還沒選過任何活動)
-                return True, [], "新帳號註冊成功"
+                    return False, [], "⚠️ 密碼錯誤或此帳號已存在"
+
+        # --- 3. 自己家沒有，去檢查「買書」資料庫 (鄰居家) ---
+        try:
+            # 注意：這裡要填寫您「買書 App」的 Sheet 名稱
+            SHEET_NAME_SHOP = "2026國際書展使用者採購清單"
+            sh_shop = client.open(SHEET_NAME_SHOP)
+            ws_shop = sh_shop.worksheet("users")
+            data_shop = ws_shop.get_all_values()
+            
+            if len(data_shop) > 1:
+                df_shop = pd.DataFrame(data_shop[1:], columns=data_shop[0])
+                if "User_ID" in df_shop.columns:
+                    shop_user = df_shop[df_shop["User_ID"] == user_id]
+                    if not shop_user.empty:
+                        # 🔥 發現了！他在買書那邊有帳號！
+                        other_pin = str(shop_user.iloc[0]["Password"]).strip()
+                        
+                        if other_pin == input_pin:
+                            # 密碼正確 -> 自動在「行事曆」這邊幫他註冊
+                            new_row = [user_id, input_pin] + [""] * (len(HEADERS) - 2)
+                            ws_cal.append_row(new_row)
+                            return True, [], "登入成功 (已同步買書帳號)"
+                        else:
+                            return False, [], "⚠️ 此帳號已在「買書小幫手」註冊，請輸入該帳號的正確密碼！"
+        except Exception as e:
+            print(f"跨表檢查失敗: {e}")
+            pass
+
+        # --- 4. 兩邊都沒有 -> 全新註冊 ---
+        new_row = [user_id, input_pin] + [""] * (len(HEADERS) - 2)
+        ws_cal.append_row(new_row)
+        return True, [], "新帳號註冊成功"
         
-        return False, [], "資料庫欄位錯誤"
     except Exception as e:
         return False, [], f"系統錯誤: {e}"
 
