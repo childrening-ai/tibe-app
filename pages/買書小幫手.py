@@ -274,11 +274,12 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
         if has_data and len(existing_data) > 1:
             try:
                 df_clean = pd.DataFrame(existing_data[1:], columns=TARGET_COLS)
-                # 🔥🔥🔥 關鍵修正：這裡也要重置索引！🔥🔥🔥
-                # 這能防止對 df_clean 進行過濾 (filtering) 時發生 Index 衝突
-                df_clean = df_clean.reset_index(drop=True)
             except ValueError:
                 pass
+        
+        # 🔥🔥🔥 請確認這一行是「靠左」的 (不要縮在 try 裡面) 🔥🔥🔥
+        # 這行會強制把所有可能造成報錯的重複索引都洗掉
+        df_clean = df_clean.reset_index(drop=True)
 
         # 準備要寫入的新資料
         new_records = current_df.copy()
