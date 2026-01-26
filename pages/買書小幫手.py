@@ -249,7 +249,7 @@ def load_user_cart(user_id):
     except:
         return pd.DataFrame()
 
-# --- 儲存功能 (修正版：強制重置 Index 防止報錯) ---
+# --- 儲存功能 (修正版：雙重重置 Index 防止報錯) ---
 def save_user_cart_to_cloud(user_id, user_pin, current_df):
     client = get_gspread_client()
     if not client: return False
@@ -257,17 +257,12 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
         sh = client.open(SHEET_NAME)
         ws = sh.worksheet(WORKSHEET_MASTER_CART)
         
-        # 🔥🔥🔥 關鍵修正：在這裡加入這行！🔥🔥🔥
-        # 強制重置索引，消除任何重複的編號 (例如兩個第0列)
+        # 1. 強制重置傳入資料的索引 (您原本加的)
         current_df = current_df.reset_index(drop=True)
-        # ----------------------------------------
         
         TARGET_COLS = ["User_ID", "Password", "書名", "出版社", "定價", "折扣", "折扣價", "狀態", "備註"]
         
-        # 讀取現有資料
         existing_data = ws.get_all_values()
-        
-        # ... (以下程式碼保持不變) ...
         
         df_clean = pd.DataFrame(columns=TARGET_COLS)
         has_data = False
@@ -279,10 +274,13 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
         if has_data and len(existing_data) > 1:
             try:
                 df_clean = pd.DataFrame(existing_data[1:], columns=TARGET_COLS)
+                # 🔥🔥🔥 關鍵修正：這裡也要重置索引！🔥🔥🔥
+                # 這能防止對 df_clean 進行過濾 (filtering) 時發生 Index 衝突
+                df_clean = df_clean.reset_index(drop=True)
             except ValueError:
                 pass
 
-        # 1. 準備要寫入的新資料
+        # 準備要寫入的新資料
         new_records = current_df.copy()
 
         if "折數" in new_records.columns:
@@ -295,17 +293,18 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
             if col not in new_records.columns: new_records[col] = ""
         new_records = new_records[TARGET_COLS]
 
-        # 2. 保留「其他人」的資料
+        # 保留「其他人」的資料
         if not df_clean.empty:
+            # 如果 df_clean 索引不乾淨，這行就會報 Reindexing Error
             df_keep = df_clean[df_clean["User_ID"].astype(str) != str(user_id)]
         else:
             df_keep = pd.DataFrame(columns=TARGET_COLS)
 
-        # 3. 合併
+        # 合併
         df_final = pd.concat([df_keep, new_records], ignore_index=True)
         df_final = df_final.fillna("") 
         
-        # 4. 寫回
+        # 寫回
         final_values = [TARGET_COLS] + df_final.values.tolist()
         ws.clear()
         ws.update(range_name='A1', values=final_values)
@@ -484,18 +483,25 @@ st.sidebar.success(f"Hi, {st.session_state.user_id}")
 # (這裡移除了預算設定輸入框)
 st.sidebar.markdown("---")
 if st.sidebar.button("🚪 登出 / 結束試用", use_container_width=True):
-    # 1. 清除登入狀態
+    # 1. 清除核心登入狀態
     st.session_state.is_logged_in = False
     st.session_state.user_id = ""
     st.session_state.cart_data = pd.DataFrame()
     
-    # 🔥 關鍵修正：把「已同步」的標記全部移除或重置！
+    # 2. 清除同步標記
     if "synced_shopping" in st.session_state:
         del st.session_state.synced_shopping
     if "synced_calendar" in st.session_state:
         del st.session_state.synced_calendar
         
-    # 2. 重新整理
+    # 3. 🔥🔥🔥 關鍵修正：徹底清除殘留的輸入框與訊息 🔥🔥🔥
+    # 這些 key 對應到 text_input 的 key 和回饋訊息
+    keys_to_clear = ["add_msg", "in_title", "in_pub", "in_price", "in_discount", "in_note", "debug_ai_raw"]
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+        
+    # 4. 重新整理
     st.rerun()
 
 st.title(f"📷 新增書籍資料")
