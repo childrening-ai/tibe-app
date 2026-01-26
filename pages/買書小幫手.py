@@ -249,7 +249,7 @@ def load_user_cart(user_id):
     except:
         return pd.DataFrame()
 
-# --- 儲存功能 (列表過濾版：繞過 Pandas 索引機制) ---
+# --- 儲存功能 (去 Pandas 化版：完全避開 Reindexing 錯誤) ---
 def save_user_cart_to_cloud(user_id, user_pin, current_df):
     client = get_gspread_client()
     if not client: return False
@@ -257,68 +257,66 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
         sh = client.open(SHEET_NAME)
         ws = sh.worksheet(WORKSHEET_MASTER_CART)
         
-        # 1. 處理當前使用者的資料 (重置索引)
-        current_df = current_df.reset_index(drop=True)
-        
+        # 定義標準欄位順序
         TARGET_COLS = ["User_ID", "Password", "書名", "出版社", "定價", "折扣", "折扣價", "狀態", "備註"]
         
-        # 2. 讀取雲端所有資料 (這是 List of Lists，不是 DataFrame)
+        # 1. 讀取雲端所有資料 (取得原始 List)
         raw_data = ws.get_all_values()
         
-        other_people_data = []
+        # 準備容器：存放標題與其他人的資料
+        final_data_to_upload = []
         
-        # 3. 🔥 關鍵差異：使用 Python List 直接過濾 (完全避開 Pandas Index 問題)
-        if raw_data and len(raw_data) > 1:
+        # 2. 處理標題與舊資料
+        if raw_data:
             header = raw_data[0]
-            
-            # 找出 "User_ID" 在第幾欄 (防呆：如果沒有這欄就不讀了)
+            # 確保有 User_ID 欄位
             if "User_ID" in header:
                 uid_idx = header.index("User_ID")
                 
-                # 迴圈檢查每一列 (這是最純粹的 Python，絕對不會報 Reindexing 錯)
+                # 保留標題
+                final_data_to_upload.append(TARGET_COLS) 
+                
+                # 保留「其他人」的資料 (純 List 操作)
                 for row in raw_data[1:]:
-                    # 確保這一列長度夠長，且 User_ID 不等於目前使用者
+                    # 如果這一行的 User_ID 不是我，就保留
                     if len(row) > uid_idx and str(row[uid_idx]).strip() != str(user_id):
-                        other_people_data.append(row)
-            
-        # 4. 將篩選好的 List 轉為 DataFrame
-        if other_people_data:
-            # 為了防止欄位數不一致，這裡做一個保險
-            try:
-                df_keep = pd.DataFrame(other_people_data, columns=raw_data[0])
-            except:
-                # 萬一欄位對不上，就只取前幾欄
-                df_keep = pd.DataFrame(other_people_data)
-                df_keep = df_keep.iloc[:, :len(TARGET_COLS)]
-                df_keep.columns = TARGET_COLS[:df_keep.shape[1]]
+                        # 這裡做一個防呆：確保這行資料長度跟標題一樣，不夠補空，太多截斷
+                        clean_row = row[:len(TARGET_COLS)] + [""] * (len(TARGET_COLS) - len(row))
+                        final_data_to_upload.append(clean_row)
+            else:
+                # 如果連 User_ID 都沒有，這張表可能是壞的，我們直接重寫標題
+                final_data_to_upload.append(TARGET_COLS)
         else:
-            df_keep = pd.DataFrame(columns=TARGET_COLS)
+            # 空表，加入標題
+            final_data_to_upload.append(TARGET_COLS)
 
-        # 確保 df_keep 也有標準欄位
-        for col in TARGET_COLS:
-            if col not in df_keep.columns: df_keep[col] = ""
-        df_keep = df_keep[TARGET_COLS]
-
-        # 5. 準備要寫入的新資料
-        new_records = current_df.copy()
-        if "折數" in new_records.columns:
-            new_records.rename(columns={"折數": "折扣"}, inplace=True)
-
-        new_records["User_ID"] = str(user_id)
-        new_records["Password"] = str(user_pin)
+        # 3. 處理「我的新資料」 (只用 Pandas 做資料整理，不做合併)
+        # 確保 current_df 是乾淨的
+        df_to_save = current_df.copy().reset_index(drop=True)
         
-        for col in TARGET_COLS:
-            if col not in new_records.columns: new_records[col] = ""
-        new_records = new_records[TARGET_COLS]
-
-        # 6. 合併 (這時候 df_keep 是全新的，new_records 也是全新的，合併絕對安全)
-        df_final = pd.concat([df_keep, new_records], ignore_index=True)
-        df_final = df_final.fillna("") 
+        if "折數" in df_to_save.columns:
+            df_to_save.rename(columns={"折數": "折扣"}, inplace=True)
         
-        # 7. 寫回
-        final_values = [TARGET_COLS] + df_final.values.tolist()
+        df_to_save["User_ID"] = str(user_id)
+        df_to_save["Password"] = str(user_pin)
+        
+        # 補齊欄位
+        for col in TARGET_COLS:
+            if col not in df_to_save.columns: df_to_save[col] = ""
+            
+        # 依照 TARGET_COLS 的順序排列，並將所有 NaN 填為空字串
+        df_to_save = df_to_save[TARGET_COLS].fillna("")
+        
+        # 🔥 關鍵：把 DataFrame 轉成純 List，不要用 Pandas 做合併
+        my_records_list = df_to_save.values.tolist()
+        
+        # 4. 合併 (List + List) -> 絕對不會報 Index 錯
+        final_data_to_upload.extend(my_records_list)
+        
+        # 5. 寫回 Google Sheet
         ws.clear()
-        ws.update(range_name='A1', values=final_values)
+        ws.update(range_name='A1', values=final_data_to_upload)
+        
         return True
     except Exception as e:
         st.error(f"儲存失敗: {str(e)}")
