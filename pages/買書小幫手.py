@@ -295,9 +295,11 @@ def save_user_cart_to_cloud(user_id, user_pin, current_df):
         new_records = new_records[TARGET_COLS]
 
         # 保留「其他人」的資料
-        if not df_clean.empty:
-            # 如果 df_clean 索引不乾淨，這行就會報 Reindexing Error
-            df_keep = df_clean[df_clean["User_ID"].astype(str) != str(user_id)]
+        if not df_clean.empty and "User_ID" in df_clean.columns:
+            # 🔥🔥🔥 終極修正：加上 .values 🔥🔥🔥
+            # 這會把篩選條件變成單純的 True/False 清單，強制 Pandas 忽略索引問題
+            mask = df_clean["User_ID"].astype(str) != str(user_id)
+            df_keep = df_clean[mask.values] 
         else:
             df_keep = pd.DataFrame(columns=TARGET_COLS)
 
